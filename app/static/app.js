@@ -13,8 +13,8 @@ const STATUS = {
 };
 const FILTROS = [
   ["todos", "Todos"],
+  ["aguardando_publicacao", "📥 Enviados para publicação"],
   ["em_edicao", "Em edição"],
-  ["aguardando_publicacao", "Aguardando publicação"],
   ["publicado", "Publicado"],
   ["sincronizado", "Sem alterações"],
   ["problemas", "Com erro / não sincronizado"],
@@ -36,6 +36,8 @@ const ACOES = {
 };
 
 const estado = {
+  admin: false,            // administrador logado (área central)
+  loginHabilitado: false,
   ident: { responsavel: "", unidade: "", email: "" }, // quem está editando (lembrado neste navegador)
   unidades: [],            // unidades da SEDESE agrupadas (página "Quem é Quem")
   nomesUnidades: new Set(),
@@ -609,13 +611,92 @@ async function iniciar() {
   ]);
   estado.unidades = unidades;
   estado.nomesUnidades = new Set(unidades.flatMap((g) => g.unidades));
-  if (cfg.portal_configurado === false) {
-    toast("Variáveis do Portal MG não configuradas no Railway — a sincronização está desativada.", "erro");
-  }
+  aplicarPerfil(cfg);
   await carregarLista();
-  acompanharSync(false);
+  if (estado.admin) {
+    focarEnviados();
+    acompanharSync(false);
+  }
   abrirPelaURL();
 }
+
+/* ---------------------------------------------------------------- administrador */
+function aplicarPerfil(cfg) {
+  estado.admin = !!cfg.admin;
+  estado.loginHabilitado = !!cfg.login_habilitado;
+  document.body.classList.toggle("modo-admin", estado.admin);
+  document.querySelectorAll(".so-admin").forEach((n) => (n.hidden = !estado.admin));
+  $("#btn-entrar").hidden = estado.admin || !estado.loginHabilitado;
+  $("#btn-sair").title = estado.admin ? `Sair (${cfg.admin_nome})` : "";
+  if (estado.admin && cfg.portal_configurado === false) {
+    toast("Variáveis do Portal MG não configuradas no Railway — a sincronização está desativada.", "erro");
+  }
+}
+
+/** Mostra os serviços enviados para publicação (se houver). */
+function focarEnviados() {
+  if (estado.servicos.some((x) => x.status === "aguardando_publicacao")) {
+    estado.filtro = "aguardando_publicacao";
+    desenharLista();
+  }
+}
+
+async function trocarPerfil() {
+  const f = formEnvio();
+  aplicarPerfil(await api("GET", "/api/config"));
+  await carregarLista();
+  if (!estado.admin && estado.filtro === "aguardando_publicacao") estado.filtro = "todos";
+  if (estado.admin) {
+    focarEnviados();
+    acompanharSync(false);
+  }
+  if (!estado.atual) return desenharLista();
+  if (!estado.admin && !estado.servicos.some((x) => x.id_servico === estado.atual.id_servico)) {
+    estado.base = null; // o serviço deixou de ser visível sem o login
+    location.hash = "";
+    return;
+  }
+  desenharServico(); // mantém a edição em andamento
+  $("#f-observacoes").value = f.observacoes;
+  $("#f-autorizado").checked = f.autorizado;
+  atualizarPendente();
+}
+
+$("#btn-entrar").addEventListener("click", () => {
+  const form = el("form", {},
+    el("p", { class: "muted", style: "margin:0" }, "Acesso exclusivo do administrador da área central."),
+    el("label", {}, "E-mail", el("input", { type: "email", name: "email", required: true, autocomplete: "username" })),
+    el("label", {}, "Senha", el("input", { type: "password", name: "senha", required: true, autocomplete: "current-password" })),
+    el("p", { class: "erro", role: "alert" }),
+    el("div", {}, el("button", { class: "btn primario", type: "submit" }, "Entrar")));
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    try {
+      await api("POST", "/api/login", { email: form.email.value, senha: form.senha.value });
+      $("#dialogo").close();
+      await trocarPerfil();
+      toast("Você entrou como administrador.", "ok");
+    } catch (err) {
+      form.querySelector(".erro").textContent = err.message;
+    }
+  });
+  dialogo("Entrar — administrador", form);
+  form.email.focus();
+});
+
+$("#btn-sair").addEventListener("click", async () => {
+  await api("POST", "/api/logout");
+  clearTimeout(timerSync);
+  $("#sync-status").hidden = true;
+  await trocarPerfil();
+  toast("Você saiu da área do administrador.");
+});
+
+$("#btn-enviados").addEventListener("click", () => {
+  estado.filtro = "aguardando_publicacao";
+  desenharLista();
+  $("#lateral").classList.add("aberta");
+});
 
 /* ---------------------------------------------------------------- lista lateral */
 function grupoStatus(s) {
@@ -657,10 +738,13 @@ function desenharLista() {
       )))));
   if (!visiveis.length) $("#lista").append(el("li", { class: "muted", style: "padding:12px" }, "Nenhum serviço encontrado."));
 
+  const n = contagem.aguardando_publicacao || 0;
+  $("#n-enviados").textContent = n;
+  $("#btn-enviados").classList.toggle("destaque", n > 0);
   $("#resumo").replaceChildren(...[
-    ["em_edicao", "Em edição"], ["aguardando_publicacao", "Aguardando publicação"], ["publicado", "Publicados"],
+    ["em_edicao", "Em edição"], ["aguardando_publicacao", "Enviados para publicação"], ["publicado", "Publicados"],
     ["sincronizado", "Sem alterações"], ["problemas", "Com pendência técnica"],
-  ].map(([k, rot]) => el("div", { class: "card" }, el("div", { class: "num" }, contagem[k] || 0), el("div", { class: "muted" }, rot))));
+  ].filter(([k]) => estado.admin || !["aguardando_publicacao", "problemas"].includes(k)).map(([k, rot]) => el("div", { class: "card" }, el("div", { class: "num" }, contagem[k] || 0), el("div", { class: "muted" }, rot))));
 }
 
 $("#busca").addEventListener("input", (e) => { estado.busca = e.target.value; desenharLista(); });
@@ -669,10 +753,8 @@ $("#btn-menu").addEventListener("click", () => $("#lateral").classList.toggle("a
 $("#form-add").addEventListener("submit", async (e) => {
   e.preventDefault();
   const id = Number(e.target.id.value);
-  const identificacao = await exigirIdentificacao();
-  if (!identificacao) return;
   try {
-    await api("POST", "/api/servicos", { id_servico: id, identificacao });
+    await api("POST", "/api/servicos", { id_servico: id });
     e.target.reset();
     await carregarLista();
     toast(`Serviço ${id} incluído.`, "ok");
@@ -718,6 +800,11 @@ async function abrirServico(id) {
     $("#conteudo").scrollTop = 0;
   } catch (err) {
     toast(err.message, "erro");
+    if (err.status === 404) {
+      history.replaceState(null, "", estado.atual ? `#s/${estado.atual.id_servico}` : location.pathname);
+      hashAnterior = location.hash;
+      await carregarLista();
+    }
   }
 }
 
@@ -777,7 +864,7 @@ function desenharServico() {
   if (!s.original) {
     art.replaceChildren(cab, ...avisos, el("div", { class: "aviso azul" },
       "Este serviço ainda não foi carregado do Portal MG. ",
-      el("button", { class: "btn pequeno", onclick: () => ressincronizar() }, "Sincronizar agora")));
+      estado.admin ? el("button", { class: "btn pequeno", onclick: () => ressincronizar() }, "Sincronizar agora") : null));
     return;
   }
 
@@ -821,9 +908,9 @@ function painelEnvio() {
   obs.addEventListener("input", atualizarPendente);
 
   const btnSalvar = el("button", { class: "btn primario grande", id: "btn-salvar", onclick: salvar }, "💾 Salvar");
-  const acoesCentral = [
+  const acoesCentral = !estado.admin ? [] : [
     s.status === "aguardando_publicacao" ? el("button", { class: "btn ok", onclick: marcarPublicado, title: "Use depois de atualizar manualmente o Portal MG" }, "✔ Marcar como publicado no Portal MG") : null,
-    s.status === "aguardando_publicacao" || s.status === "em_edicao" ? el("button", { class: "btn", onclick: devolver }, "↩ Devolver à área") : null,
+    s.status === "aguardando_publicacao" || s.status === "em_edicao" ? el("button", { class: "btn", onclick: devolver }, "↩ Devolver à área demandante") : null,
     el("button", { class: "btn", onclick: ressincronizar, title: "Busca a versão atual deste serviço no Portal MG" }, "⟳ Ressincronizar"),
     s.status !== "sincronizado" ? el("button", { class: "btn perigo", onclick: descartar }, "Descartar edições") : null,
   ];
@@ -843,13 +930,17 @@ function painelEnvio() {
               `Autorizado por ${quem(s.autorizado_por, s.autorizado_unidade)}${s.autorizado_email ? ` · ${s.autorizado_email}` : ""} em ${dataBR(s.autorizado_em)}.`)
             : null,
         )),
-      el("h3", { class: "ident-titulo" }, "Responsável pelas informações"),
-      el("p", { class: "muted", style: "margin:0 0 8px;font-size:13px" },
-        "Obrigatório para salvar. Fica registrado no histórico e é lembrado neste navegador."),
-      camposIdentificacao(),
+      ...(estado.admin
+        ? [el("p", { class: "muted", style: "margin:14px 0 0;font-size:13px" },
+          "Você está logado como administrador: as gravações ficam registradas em seu nome.")]
+        : [el("h3", { class: "ident-titulo" }, "Responsável pelas informações"),
+          el("p", { class: "muted", style: "margin:0 0 8px;font-size:13px" },
+            "Obrigatório para salvar. Fica registrado no histórico e é lembrado neste navegador. ",
+            "Ao salvar com a autorização marcada, o serviço vai para a área central e sai desta lista até ser publicado ou devolvido."),
+          camposIdentificacao()]),
       el("div", { class: "envio-acoes" }, btnSalvar),
-      el("div", { class: "central" },
-        el("span", { class: "central-rotulo" }, "Área central:"), ...acoesCentral),
+      estado.admin ? el("div", { class: "central" },
+        el("span", { class: "central-rotulo" }, "Administrador:"), ...acoesCentral) : null,
     ));
 }
 
@@ -862,17 +953,26 @@ async function salvar() {
   const s = estado.atual;
   const f = formEnvio();
   if (!f.autorizado && !temPendencias()) return toast("Nada para salvar.");
-  const identificacao = await exigirIdentificacao();
-  if (!identificacao) return;
+  const identificacao = estado.admin ? undefined : await exigirIdentificacao();
+  if (!estado.admin && !identificacao) return;
+  if (f.autorizado && !estado.admin
+    && !confirm("Enviar para publicação?\n\nO serviço vai para a área central e deixa de aparecer nesta lista até ser publicado ou devolvido.")) return;
   const btn = $("#btn-salvar");
   btn.disabled = true;
   try {
     const novo = await api("PUT", `/api/servicos/${s.id_servico}`, {
       editado: estado.editado, versao: s.versao, observacoes: f.observacoes, autorizado: f.autorizado, identificacao,
     });
+    if (novo.enviado) {
+      estado.base = null;
+      location.hash = "";
+      await carregarLista();
+      toast("Enviado para a área central. Obrigado! O serviço volta a aparecer depois de publicado ou devolvido.", "ok");
+      return;
+    }
     carregarNoEditor(novo);
     await carregarLista();
-    toast(f.autorizado ? "Salvo e enviado para publicação pela área central." : "Alterações salvas (rascunho).", "ok");
+    toast(f.autorizado ? "Salvo e mantido em “Enviados para publicação”." : "Alterações salvas (rascunho).", "ok");
   } catch (err) {
     if (err.status === 409) {
       if (confirm(`${err.message}\n\nRecarregar agora? (suas alterações não salvas serão perdidas — use “Alterações” para copiá-las antes)`)) {
@@ -901,16 +1001,13 @@ async function acaoAdmin(url, corpo, msg) {
 
 async function marcarPublicado() {
   if (temPendencias()) return toast("Salve ou descarte as alterações pendentes antes.", "erro");
-  const identificacao = await exigirIdentificacao();
-  if (!identificacao || !confirm("Confirma que o conteúdo já foi atualizado manualmente no Portal MG?")) return;
-  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/publicado`, { identificacao }, "Marcado como publicado.");
+  if (!confirm("Confirma que o conteúdo já foi atualizado manualmente no Portal MG?")) return;
+  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/publicado`, undefined, "Marcado como publicado.");
 }
 
-async function descartar() {
-  const identificacao = await exigirIdentificacao();
-  if (!identificacao) return;
+function descartar() {
   if (!confirm("Descartar TODAS as edições deste serviço e voltar ao conteúdo atual do Portal MG? (a versão descartada fica no histórico)")) return;
-  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/descartar`, { identificacao }, "Edições descartadas.");
+  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/descartar`, undefined, "Edições descartadas.");
 }
 
 function ressincronizar() {
@@ -918,18 +1015,16 @@ function ressincronizar() {
   acaoAdmin(`/api/servicos/${estado.atual.id_servico}/sincronizar`, undefined, "Serviço sincronizado com o Portal MG.");
 }
 
-async function devolver() {
-  const identificacao = await exigirIdentificacao();
-  if (!identificacao) return;
+function devolver() {
   const form = el("form", {},
     el("label", {}, "Motivo / orientações para a área", el("textarea", { name: "motivo", rows: 5, required: true, minlength: 3 })),
     el("div", {}, el("button", { class: "btn primario", type: "submit" }, "Devolver")));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     $("#dialogo").close();
-    acaoAdmin(`/api/servicos/${estado.atual.id_servico}/devolver`, { identificacao, motivo: form.motivo.value }, "Serviço devolvido à área.");
+    acaoAdmin(`/api/servicos/${estado.atual.id_servico}/devolver`, { motivo: form.motivo.value }, "Serviço devolvido à área demandante.");
   });
-  dialogo("Devolver à área responsável", form);
+  dialogo("Devolver à área demandante", form);
 }
 
 async function abrirHistorico() {

@@ -41,7 +41,7 @@ CREATE TABLE IF NOT EXISTS historico (
 );
 CREATE INDEX IF NOT EXISTS historico_servico_idx ON historico (id_servico, criado_em DESC);
 
--- Identificacao de quem edita/autoriza (o sistema nao tem login)
+-- Identificacao de quem edita/autoriza (o publico nao tem login)
 ALTER TABLE servicos
     ADD COLUMN IF NOT EXISTS autorizado_unidade TEXT,
     ADD COLUMN IF NOT EXISTS autorizado_email   TEXT,

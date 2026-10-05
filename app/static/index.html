@@ -17,8 +17,11 @@
       <div class="marca"><span class="marca-icone">✓</span><span>SEDESE <b>·</b> Serviços no Portal MG</span></div>
       <div class="topo-acoes">
         <div id="sync-status" class="sync-status" hidden></div>
-        <button class="btn" id="btn-sync" title="Busca novamente todos os serviços na API do Portal MG">⟳<span class="rot"> Sincronizar com Portal MG</span></button>
-        <a class="btn" id="btn-exportar" href="/api/exportar" title="Baixa os serviços aguardando publicação (original × editado)">⇩<span class="rot"> Exportar pendentes</span></a>
+        <button class="btn so-admin enviados" id="btn-enviados" title="Serviços enviados pelas áreas para publicação" hidden>📥<span class="rot"> Enviados</span> <span class="contador" id="n-enviados">0</span></button>
+        <button class="btn so-admin" id="btn-sync" hidden title="Busca novamente todos os serviços na API do Portal MG">⟳<span class="rot"> Sincronizar com Portal MG</span></button>
+        <a class="btn so-admin" id="btn-exportar" hidden href="/api/exportar" title="Baixa os serviços aguardando publicação (original × editado)">⇩<span class="rot"> Exportar pendentes</span></a>
+        <button class="btn" id="btn-entrar" title="Acesso do administrador" hidden>🔒<span class="rot"> Área central</span></button>
+        <button class="btn so-admin" id="btn-sair" hidden>👤<span class="rot"> Admin · Sair</span></button>
       </div>
     </header>
 
@@ -28,7 +31,7 @@
         <div class="filtros" id="filtros"></div>
       </div>
       <ul class="lista" id="lista" aria-label="Serviços"></ul>
-      <div class="lateral-rodape">
+      <div class="lateral-rodape so-admin" hidden>
         <form id="form-add" class="add-servico">
           <input type="number" min="1" name="id" placeholder="Incluir ID de serviço" aria-label="ID do serviço" required>
           <button class="btn" type="submit">Incluir</button>
