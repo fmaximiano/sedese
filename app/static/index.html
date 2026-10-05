@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Serviços SEDESE · Portal MG</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230b5cad'/%3E%3Cpath d='M9 17l4.5 4.5L23 11' stroke='white' stroke-width='3.2' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/styles.css">
+  <script src="/static/vendor/purify.min.js" defer></script>
+  <script src="/static/app.js" defer></script>
+</head>
+<body>
+  <!-- LOGIN -->
+  <section id="tela-login" class="login" hidden>
+    <form id="form-login" class="login-card">
+      <div class="marca"><span class="marca-icone">✓</span> SEDESE · Serviços no Portal MG</div>
+      <p class="muted">Acesso restrito às áreas da Secretaria de Estado de Desenvolvimento Social.</p>
+      <label>E-mail<input type="email" name="email" autocomplete="username" required></label>
+      <label>Senha<input type="password" name="senha" autocomplete="current-password" required></label>
+      <p id="login-erro" class="erro" role="alert"></p>
+      <button class="btn primario" type="submit">Entrar</button>
+    </form>
+  </section>
+
+  <!-- APLICAÇÃO -->
+  <div id="tela-app" class="app" hidden>
+    <header class="topo">
+      <button class="btn icone so-mobile" id="btn-menu" aria-label="Lista de serviços">☰</button>
+      <div class="marca"><span class="marca-icone">✓</span><span>SEDESE <b>·</b> Serviços no Portal MG</span></div>
+      <div class="topo-acoes">
+        <div id="sync-status" class="sync-status" hidden></div>
+        <button class="btn so-admin" id="btn-sync" title="Busca novamente todos os serviços na API do Portal MG">⟳<span class="rot"> Sincronizar com Portal MG</span></button>
+        <a class="btn so-admin" id="btn-exportar" href="/api/exportar" title="Baixa os serviços aguardando publicação (original × editado)">⇩<span class="rot"> Exportar pendentes</span></a>
+        <button class="btn so-admin" id="btn-usuarios">👥<span class="rot"> Usuários</span></button>
+        <div class="usuario">
+          <button class="btn" id="btn-usuario"></button>
+          <div class="menu" id="menu-usuario" hidden>
+            <button id="btn-senha">Trocar senha</button>
+            <button id="btn-sair">Sair</button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <aside class="lateral" id="lateral">
+      <div class="lateral-topo">
+        <input type="search" id="busca" placeholder="Buscar por nome ou nº do serviço…" aria-label="Buscar serviço">
+        <div class="filtros" id="filtros"></div>
+      </div>
+      <ul class="lista" id="lista" aria-label="Serviços"></ul>
+      <div class="lateral-rodape so-admin">
+        <form id="form-add" class="add-servico">
+          <input type="number" min="1" name="id" placeholder="Incluir ID de serviço" aria-label="ID do serviço" required>
+          <button class="btn" type="submit">Incluir</button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="conteudo" id="conteudo">
+      <div class="vazio" id="vazio">
+        <h2>Selecione um serviço</h2>
+        <p class="muted">Escolha um serviço na lista para revisar os dados, as unidades de atendimento e as etapas.</p>
+        <div class="resumo" id="resumo"></div>
+      </div>
+      <article id="servico" hidden></article>
+    </main>
+  </div>
+
+  <div class="barra-pendente" id="barra-pendente" hidden>
+    <span>Você tem alterações não salvas.</span>
+    <button class="btn primario" id="btn-ir-salvar">Ir para “Salvar”</button>
+  </div>
+
+  <dialog id="dialogo" class="dialogo"><div id="dialogo-corpo"></div></dialog>
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+</body>
+</html>
