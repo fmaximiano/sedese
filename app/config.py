@@ -1,4 +1,5 @@
 """Configuração lida exclusivamente de variáveis de ambiente (Railway)."""
+import hashlib
 import os
 
 
@@ -27,3 +28,17 @@ PORTALMG_TIMEOUT = float(_env("PORTALMG_TIMEOUT", "30"))
 
 # Lista opcional de IDs (separados por vírgula/espaço) que substitui a lista padrão do código.
 SERVICOS_IDS = _env("SERVICOS_IDS", "")
+
+# Administrador único (área central). Sem estas duas variáveis, ninguém consegue entrar como admin.
+ADMIN_EMAIL = (_env("ADMIN_EMAIL", "") or "").lower()
+ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
+ADMIN_NOME = _env("ADMIN_NOME", "Administrador SEDESE")
+ADMIN_UNIDADE = _env("ADMIN_UNIDADE", "Área central (administrador)")
+
+# Assinatura do cookie de sessão. Opcional: se ausente, é derivada da senha do admin e do banco.
+SESSION_SECRET = _env("SESSION_SECRET", "") or hashlib.sha256(
+    f"sedese-sessao\n{ADMIN_PASSWORD}\n{DATABASE_URL}".encode()
+).hexdigest()
+
+# Cookie "Secure" (desligue apenas para testes locais em http://).
+COOKIE_SECURE = (_env("COOKIE_SECURE", "true") or "true").lower() != "false"
