@@ -12,7 +12,6 @@ def _env(nome: str, padrao: str | None = None, obrigatorio: bool = False) -> str
 
 
 DATABASE_URL = _env("DATABASE_URL", obrigatorio=True)
-SESSION_SECRET = _env("SESSION_SECRET", obrigatorio=True)
 
 # Portal MG — URLs e chave nunca vão para o navegador; só o servidor as usa.
 PORTALMG_API_KEY = _env("PORTALMG_API_KEY", "")
@@ -26,13 +25,5 @@ PORTALMG_USER_AGENT = _env(
 PORTALMG_CONCORRENCIA = int(_env("PORTALMG_CONCORRENCIA", "4"))
 PORTALMG_TIMEOUT = float(_env("PORTALMG_TIMEOUT", "30"))
 
-# Primeiro administrador (criado/atualizado na inicialização se informado).
-ADMIN_EMAIL = (_env("ADMIN_EMAIL", "") or "").lower()
-ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
-ADMIN_NOME = _env("ADMIN_NOME", "Administrador SEDESE")
-
 # Lista opcional de IDs (separados por vírgula/espaço) que substitui a lista padrão do código.
 SERVICOS_IDS = _env("SERVICOS_IDS", "")
-
-# Cookie "Secure" (desligue apenas para testes locais em http).
-COOKIE_SECURE = (_env("COOKIE_SECURE", "true") or "true").lower() != "false"

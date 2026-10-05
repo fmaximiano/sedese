@@ -36,7 +36,9 @@ const ACOES = {
 };
 
 const estado = {
-  usuario: null,
+  ident: { responsavel: "", unidade: "", email: "" }, // quem está editando (lembrado neste navegador)
+  unidades: [],            // unidades da SEDESE agrupadas (página "Quem é Quem")
+  nomesUnidades: new Set(),
   servicos: [],
   filtro: "todos",
   busca: "",
@@ -99,10 +101,6 @@ async function api(metodo, url, corpo) {
   const r = await fetch(url, opts);
   let dados = null;
   try { dados = await r.json(); } catch { /* sem corpo */ }
-  if (r.status === 401 && url !== "/api/login") {
-    mostrarLogin();
-    throw new Error("Sessão expirada.");
-  }
   if (!r.ok) {
     let msg = dados?.detail;
     if (Array.isArray(msg)) msg = msg.map((d) => d.msg).join("; ");
@@ -516,72 +514,108 @@ function dialogo(titulo, conteudo) {
   return d;
 }
 
-/* ---------------------------------------------------------------- login / sessão */
-function mostrarLogin() {
-  $("#tela-app").hidden = true;
-  $("#barra-pendente").hidden = true;
-  $("#tela-login").hidden = false;
-  $("#form-login [name=email]").focus();
+/* ---------------------------------------------------------------- identificação (o sistema não tem login) */
+const EMAIL_SEDESE = /^[A-Za-z0-9._%+-]+@social\.mg\.gov\.br$/i;
+const CHAVE_IDENT = "sedese.identificacao";
+
+function carregarIdent() {
+  const vazio = { responsavel: "", unidade: "", email: "" };
+  try { return { ...vazio, ...JSON.parse(localStorage.getItem(CHAVE_IDENT) || "{}") }; } catch { return vazio; }
+}
+function guardarIdent() {
+  try { localStorage.setItem(CHAVE_IDENT, JSON.stringify(estado.ident)); } catch { /* navegador sem armazenamento */ }
+}
+function errosIdent(i = estado.ident) {
+  const e = {};
+  if ((i.responsavel || "").trim().length < 3) e.responsavel = "Informe o nome do responsável.";
+  if (!estado.nomesUnidades.has(i.unidade)) e.unidade = "Selecione a unidade na lista.";
+  if (!EMAIL_SEDESE.test((i.email || "").trim())) e.email = "Use o e-mail institucional (terminado em @social.mg.gov.br).";
+  return e;
+}
+const identValida = () => Object.keys(errosIdent()).length === 0;
+const identPayload = () => ({
+  responsavel: estado.ident.responsavel.trim(), unidade: estado.ident.unidade, email: estado.ident.email.trim().toLowerCase(),
+});
+
+/** Campos Responsável / Unidade / E-mail, ligados a estado.ident e lembrados neste navegador. */
+function camposIdentificacao() {
+  const erro = (k) => el("span", { class: "erro-campo", "data-erro": k });
+  const resp = el("input", { type: "text", name: "responsavel", maxlength: 200, required: true, autocomplete: "name", placeholder: "Nome completo" });
+  resp.value = estado.ident.responsavel;
+  const unid = el("select", { name: "unidade", required: true },
+    el("option", { value: "" }, "Selecione a unidade…"),
+    ...estado.unidades.map((g) => el("optgroup", { label: g.grupo }, ...g.unidades.map((u) => el("option", { value: u }, u)))));
+  unid.value = estado.nomesUnidades.has(estado.ident.unidade) ? estado.ident.unidade : "";
+  const email = el("input", { type: "email", name: "email", maxlength: 200, required: true, autocomplete: "email", placeholder: "nome@social.mg.gov.br" });
+  email.value = estado.ident.email;
+  const box = el("div", { class: "ident-grade" },
+    el("label", {}, el("span", {}, "Responsável ", el("b", { class: "obrigatorio" }, "*")), resp, erro("responsavel")),
+    el("label", {}, el("span", {}, "Unidade ", el("b", { class: "obrigatorio" }, "*")), unid, erro("unidade")),
+    el("label", {}, el("span", {}, "E-mail institucional ", el("b", { class: "obrigatorio" }, "*")), email, erro("email")));
+  const atualizar = () => {
+    estado.ident = { responsavel: resp.value, unidade: unid.value, email: email.value };
+    guardarIdent();
+    if (box.dataset.validado) mostrarErrosIdent(box);
+  };
+  resp.addEventListener("input", atualizar);
+  email.addEventListener("input", atualizar);
+  email.addEventListener("blur", () => mostrarErrosIdent(box, ["email"]));
+  unid.addEventListener("change", atualizar);
+  return box;
+}
+
+function mostrarErrosIdent(box, apenas) {
+  if (!apenas) box.dataset.validado = "1";
+  const erros = errosIdent();
+  box.querySelectorAll("[data-erro]").forEach((sp) => {
+    const k = sp.dataset.erro;
+    if (apenas && !apenas.includes(k)) return;
+    sp.textContent = erros[k] || "";
+    box.querySelector(`[name=${k}]`).setAttribute("aria-invalid", String(!!erros[k]));
+  });
+  return Object.keys(erros).length === 0;
+}
+
+/** Garante a identificação antes de gravar: valida o bloco da tela ou pede num diálogo. */
+function exigirIdentificacao() {
+  return new Promise((resolve) => {
+    if (identValida()) return resolve(identPayload());
+    const box = $("#envio .ident-grade");
+    if (box) {
+      mostrarErrosIdent(box);
+      box.scrollIntoView({ behavior: "smooth", block: "center" });
+      toast("Preencha responsável, unidade e e-mail institucional.", "erro");
+      return resolve(null);
+    }
+    const campos = camposIdentificacao();
+    const form = el("form", { novalidate: true },
+      el("p", { class: "muted" }, "Identifique-se para que a ação fique registrada no histórico."), campos,
+      el("div", {}, el("button", { class: "btn primario", type: "submit" }, "Continuar")));
+    form.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (!mostrarErrosIdent(campos)) return;
+      resolve(identPayload());
+      $("#dialogo").close();
+    });
+    dialogo("Identificação", form).addEventListener("close", () => resolve(null), { once: true });
+  });
 }
 
 async function iniciar() {
-  try {
-    estado.usuario = await api("GET", "/api/me");
-  } catch {
-    return mostrarLogin();
-  }
-  $("#tela-login").hidden = true;
-  $("#tela-app").hidden = false;
-  const admin = estado.usuario.perfil === "admin";
-  document.querySelectorAll(".so-admin").forEach((n) => (n.hidden = !admin));
-  $("#btn-usuario").textContent = `👤 ${estado.usuario.nome.split(" ")[0]}`;
-  if (admin && !estado.usuario.portal_configurado) {
+  estado.ident = carregarIdent();
+  const [cfg, unidades] = await Promise.all([
+    api("GET", "/api/config").catch(() => ({})),
+    api("GET", "/api/unidades-sedese").catch(() => []),
+  ]);
+  estado.unidades = unidades;
+  estado.nomesUnidades = new Set(unidades.flatMap((g) => g.unidades));
+  if (cfg.portal_configurado === false) {
     toast("Variáveis do Portal MG não configuradas no Railway — a sincronização está desativada.", "erro");
   }
   await carregarLista();
-  if (admin) acompanharSync(false);
+  acompanharSync(false);
   abrirPelaURL();
 }
-
-$("#form-login").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const f = e.target;
-  $("#login-erro").textContent = "";
-  try {
-    await api("POST", "/api/login", { email: f.email.value, senha: f.senha.value });
-    f.senha.value = "";
-    iniciar();
-  } catch (err) {
-    $("#login-erro").textContent = err.message;
-  }
-});
-
-$("#btn-usuario").addEventListener("click", () => ($("#menu-usuario").hidden = !$("#menu-usuario").hidden));
-document.addEventListener("click", (e) => { if (!e.target.closest(".usuario")) $("#menu-usuario").hidden = true; });
-$("#btn-sair").addEventListener("click", async () => {
-  if (temPendencias() && !confirm("Há alterações não salvas. Sair mesmo assim?")) return;
-  await api("POST", "/api/logout");
-  estado.atual = null;
-  location.hash = "";
-  mostrarLogin();
-});
-$("#btn-senha").addEventListener("click", () => {
-  const form = el("form", {},
-    el("label", {}, "Senha atual", el("input", { type: "password", name: "atual", required: true, autocomplete: "current-password" })),
-    el("label", {}, "Nova senha (mínimo 10 caracteres)", el("input", { type: "password", name: "nova", required: true, minlength: 10, autocomplete: "new-password" })),
-    el("label", {}, "Repita a nova senha", el("input", { type: "password", name: "nova2", required: true, minlength: 10, autocomplete: "new-password" })),
-    el("div", {}, el("button", { class: "btn primario", type: "submit" }, "Alterar senha")));
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (form.nova.value !== form.nova2.value) return toast("As senhas não conferem.", "erro");
-    try {
-      await api("POST", "/api/me/senha", { atual: form.atual.value, nova: form.nova.value });
-      $("#dialogo").close();
-      toast("Senha alterada.", "ok");
-    } catch (err) { toast(err.message, "erro"); }
-  });
-  dialogo("Trocar senha", form);
-});
 
 /* ---------------------------------------------------------------- lista lateral */
 function grupoStatus(s) {
@@ -635,8 +669,10 @@ $("#btn-menu").addEventListener("click", () => $("#lateral").classList.toggle("a
 $("#form-add").addEventListener("submit", async (e) => {
   e.preventDefault();
   const id = Number(e.target.id.value);
+  const identificacao = await exigirIdentificacao();
+  if (!identificacao) return;
   try {
-    await api("POST", "/api/servicos", { id_servico: id });
+    await api("POST", "/api/servicos", { id_servico: id, identificacao });
     e.target.reset();
     await carregarLista();
     toast(`Serviço ${id} incluído.`, "ok");
@@ -688,7 +724,7 @@ async function abrirServico(id) {
 function carregarNoEditor(s) {
   estado.atual = s;
   estado.editado = clonar(s.editado);
-  estado.base = { editado: clonar(s.editado), observacoes: s.observacoes || "", autorizado: s.autorizado, autorizado_por: s.autorizado_por || "" };
+  estado.base = { editado: clonar(s.editado), observacoes: s.observacoes || "", autorizado: s.autorizado };
   desenharServico();
   desenharLista();
   atualizarPendente();
@@ -699,15 +735,13 @@ function formEnvio() {
   return {
     observacoes: $("#f-observacoes")?.value ?? "",
     autorizado: $("#f-autorizado")?.checked ?? false,
-    autorizado_por: $("#f-autorizado-por")?.value ?? "",
   };
 }
 
 function temPendencias() {
   if (!estado.atual || !estado.base) return false;
   const f = formEnvio();
-  return !igual(estado.editado, estado.base.editado) || f.observacoes !== estado.base.observacoes || f.autorizado !== estado.base.autorizado
-    || (f.autorizado && f.autorizado_por !== estado.base.autorizado_por);
+  return !igual(estado.editado, estado.base.editado) || f.observacoes !== estado.base.observacoes || f.autorizado !== estado.base.autorizado;
 }
 
 function atualizarPendente() {
@@ -718,7 +752,6 @@ function atualizarPendente() {
 
 function desenharServico() {
   const s = estado.atual;
-  const admin = estado.usuario.perfil === "admin";
   estado.verificadores = [];
   $("#vazio").hidden = true;
   const art = $("#servico");
@@ -729,7 +762,7 @@ function desenharServico() {
       el("span", { class: `selo ${s.status}` }, STATUS[s.status]),
       el("span", {}, `Serviço nº ${s.id_servico}`),
       el("span", {}, `Sincronizado em ${dataBR(s.sincronizado_em)}`),
-      s.atualizado_por ? el("span", {}, `Última edição: ${s.atualizado_por}, ${dataBR(s.atualizado_em)}`) : null),
+      s.atualizado_por ? el("span", {}, `Última edição: ${quem(s.atualizado_por, s.atualizado_unidade)}, ${dataBR(s.atualizado_em)}`) : null),
     el("h1", {}, s.nome || `Serviço ${s.id_servico}`),
   );
 
@@ -744,7 +777,7 @@ function desenharServico() {
   if (!s.original) {
     art.replaceChildren(cab, ...avisos, el("div", { class: "aviso azul" },
       "Este serviço ainda não foi carregado do Portal MG. ",
-      admin ? el("button", { class: "btn pequeno", onclick: () => ressincronizar() }, "Sincronizar agora") : "Aguarde a área central sincronizar."));
+      el("button", { class: "btn pequeno", onclick: () => ressincronizar() }, "Sincronizar agora")));
     return;
   }
 
@@ -776,28 +809,24 @@ function desenharServico() {
   atualizarPendente();
 }
 
+const quem = (nome, unidade) => (unidade ? `${nome} (${unidade})` : nome);
+
 function painelEnvio() {
   const s = estado.atual;
-  const admin = estado.usuario.perfil === "admin";
   const autorizado = el("input", { type: "checkbox", id: "f-autorizado" });
   autorizado.checked = !!s.autorizado;
-  const responsavel = el("input", { type: "text", id: "f-autorizado-por", maxlength: 300, placeholder: "Nome e cargo/área do responsável" });
-  responsavel.value = s.autorizado_por || estado.usuario.nome;
-  responsavel.disabled = !autorizado.checked;
-  autorizado.addEventListener("change", () => { responsavel.disabled = !autorizado.checked; if (autorizado.checked) responsavel.focus(); atualizarPendente(); });
-  responsavel.addEventListener("input", atualizarPendente);
+  autorizado.addEventListener("change", atualizarPendente);
   const obs = el("textarea", { id: "f-observacoes", rows: 3, maxlength: 5000, placeholder: "Contexto das alterações, prazos, normas que fundamentam a mudança…" });
   obs.value = s.observacoes || "";
   obs.addEventListener("input", atualizarPendente);
 
   const btnSalvar = el("button", { class: "btn primario grande", id: "btn-salvar", onclick: salvar }, "💾 Salvar");
-  const acoesAdmin = admin ? [
-    el("span", { class: "espaco" }),
+  const acoesCentral = [
     s.status === "aguardando_publicacao" ? el("button", { class: "btn ok", onclick: marcarPublicado, title: "Use depois de atualizar manualmente o Portal MG" }, "✔ Marcar como publicado no Portal MG") : null,
     s.status === "aguardando_publicacao" || s.status === "em_edicao" ? el("button", { class: "btn", onclick: devolver }, "↩ Devolver à área") : null,
     el("button", { class: "btn", onclick: ressincronizar, title: "Busca a versão atual deste serviço no Portal MG" }, "⟳ Ressincronizar"),
     s.status !== "sincronizado" ? el("button", { class: "btn perigo", onclick: descartar }, "Descartar edições") : null,
-  ] : [];
+  ];
 
   return el("section", { class: "secao envio", id: "envio" },
     el("div", { class: "secao-titulo" }, "Envio para a área central da SEDESE"),
@@ -805,14 +834,22 @@ function painelEnvio() {
       el("div", { class: "envio-grade" }, el("label", {}, "Observações para a área central", obs)),
       el("div", { class: "autorizacao" },
         autorizado,
-        el("div", { style: "flex:1;display:grid;gap:8px" },
+        el("div", { style: "flex:1;display:grid;gap:4px" },
           el("label", { for: "f-autorizado" }, "Autorizo a publicação destas informações no Portal MG"),
           el("span", { class: "muted", style: "font-size:13px" },
             "Ao marcar, a área declara que o conteúdo foi revisado e pode ser publicado. Sem a marcação, as alterações ficam salvas como rascunho (“Em edição”)."),
-          el("label", { class: "envio-grade" }, "Responsável pela autorização", responsavel),
-          s.autorizado && s.autorizado_em ? el("span", { class: "muted", style: "font-size:13px" }, `Autorizado por ${s.autorizado_por} em ${dataBR(s.autorizado_em)}.`) : null,
+          s.autorizado && s.autorizado_em
+            ? el("span", { class: "muted", style: "font-size:13px" },
+              `Autorizado por ${quem(s.autorizado_por, s.autorizado_unidade)}${s.autorizado_email ? ` · ${s.autorizado_email}` : ""} em ${dataBR(s.autorizado_em)}.`)
+            : null,
         )),
-      el("div", { class: "envio-acoes" }, btnSalvar, ...acoesAdmin),
+      el("h3", { class: "ident-titulo" }, "Responsável pelas informações"),
+      el("p", { class: "muted", style: "margin:0 0 8px;font-size:13px" },
+        "Obrigatório para salvar. Fica registrado no histórico e é lembrado neste navegador."),
+      camposIdentificacao(),
+      el("div", { class: "envio-acoes" }, btnSalvar),
+      el("div", { class: "central" },
+        el("span", { class: "central-rotulo" }, "Área central:"), ...acoesCentral),
     ));
 }
 
@@ -824,13 +861,14 @@ $("#btn-ir-salvar").addEventListener("click", irParaSalvar);
 async function salvar() {
   const s = estado.atual;
   const f = formEnvio();
-  if (f.autorizado && !f.autorizado_por.trim()) return toast("Informe o responsável pela autorização.", "erro");
   if (!f.autorizado && !temPendencias()) return toast("Nada para salvar.");
+  const identificacao = await exigirIdentificacao();
+  if (!identificacao) return;
   const btn = $("#btn-salvar");
   btn.disabled = true;
   try {
     const novo = await api("PUT", `/api/servicos/${s.id_servico}`, {
-      editado: estado.editado, versao: s.versao, observacoes: f.observacoes, autorizado: f.autorizado, autorizado_por: f.autorizado_por,
+      editado: estado.editado, versao: s.versao, observacoes: f.observacoes, autorizado: f.autorizado, identificacao,
     });
     carregarNoEditor(novo);
     await carregarLista();
@@ -861,15 +899,18 @@ async function acaoAdmin(url, corpo, msg) {
   }
 }
 
-function marcarPublicado() {
+async function marcarPublicado() {
   if (temPendencias()) return toast("Salve ou descarte as alterações pendentes antes.", "erro");
-  if (!confirm("Confirma que o conteúdo já foi atualizado manualmente no Portal MG?")) return;
-  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/publicado`, undefined, "Marcado como publicado.");
+  const identificacao = await exigirIdentificacao();
+  if (!identificacao || !confirm("Confirma que o conteúdo já foi atualizado manualmente no Portal MG?")) return;
+  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/publicado`, { identificacao }, "Marcado como publicado.");
 }
 
-function descartar() {
-  if (!confirm("Descartar TODAS as edições deste serviço e voltar ao conteúdo atual do Portal MG? (fica registrado no histórico)")) return;
-  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/descartar`, undefined, "Edições descartadas.");
+async function descartar() {
+  const identificacao = await exigirIdentificacao();
+  if (!identificacao) return;
+  if (!confirm("Descartar TODAS as edições deste serviço e voltar ao conteúdo atual do Portal MG? (a versão descartada fica no histórico)")) return;
+  acaoAdmin(`/api/servicos/${estado.atual.id_servico}/descartar`, { identificacao }, "Edições descartadas.");
 }
 
 function ressincronizar() {
@@ -877,14 +918,16 @@ function ressincronizar() {
   acaoAdmin(`/api/servicos/${estado.atual.id_servico}/sincronizar`, undefined, "Serviço sincronizado com o Portal MG.");
 }
 
-function devolver() {
+async function devolver() {
+  const identificacao = await exigirIdentificacao();
+  if (!identificacao) return;
   const form = el("form", {},
     el("label", {}, "Motivo / orientações para a área", el("textarea", { name: "motivo", rows: 5, required: true, minlength: 3 })),
     el("div", {}, el("button", { class: "btn primario", type: "submit" }, "Devolver")));
   form.addEventListener("submit", (e) => {
     e.preventDefault();
     $("#dialogo").close();
-      acaoAdmin(`/api/servicos/${estado.atual.id_servico}/devolver`, { motivo: form.motivo.value }, "Serviço devolvido à área.");
+    acaoAdmin(`/api/servicos/${estado.atual.id_servico}/devolver`, { identificacao, motivo: form.motivo.value }, "Serviço devolvido à área.");
   });
   dialogo("Devolver à área responsável", form);
 }
@@ -893,10 +936,14 @@ async function abrirHistorico() {
   try {
     const h = await api("GET", `/api/servicos/${estado.atual.id_servico}/historico`);
     dialogo("Histórico", h.length ? el("table", {},
-      el("thead", {}, el("tr", {}, el("th", {}, "Data"), el("th", {}, "Usuário"), el("th", {}, "Ação"), el("th", {}, "Detalhe"))),
+      el("thead", {}, el("tr", {}, el("th", {}, "Data"), el("th", {}, "Responsável"), el("th", {}, "Ação"), el("th", {}, "Detalhe"))),
       el("tbody", {}, ...h.map((r) => el("tr", {},
-        el("td", {}, dataBR(r.criado_em)), el("td", {}, r.usuario_nome || "—"), el("td", {}, ACOES[r.acao] || r.acao),
-        el("td", {}, [r.autorizado_por ? `Responsável: ${r.autorizado_por}` : "", r.nota || ""].filter(Boolean).join(" — ")))))
+        el("td", {}, dataBR(r.criado_em)),
+        el("td", {}, r.usuario_nome || "—",
+          r.unidade ? el("div", { class: "muted", style: "font-size:12.5px" }, r.unidade) : null,
+          r.email ? el("div", { class: "muted", style: "font-size:12.5px" }, r.email) : null),
+        el("td", {}, ACOES[r.acao] || r.acao),
+        el("td", {}, r.nota || ""))))
     ) : el("p", { class: "muted" }, "Sem registros."));
   } catch (err) { toast(err.message, "erro"); }
 }
@@ -928,83 +975,6 @@ $("#btn-sync").addEventListener("click", async () => {
     acompanharSync(true);
   } catch (err) { toast(err.message, "erro"); }
 });
-
-/* ---------------------------------------------------------------- usuários (admin) */
-$("#btn-usuarios").addEventListener("click", abrirUsuarios);
-
-async function abrirUsuarios() {
-  try {
-    const lista = await api("GET", "/api/usuarios");
-    const nomes = Object.fromEntries(estado.servicos.map((s) => [s.id_servico, s.nome || `Serviço ${s.id_servico}`]));
-    dialogo("Usuários", el("div", {},
-      el("div", { style: "margin-bottom:12px" }, el("button", { class: "btn primario", onclick: () => formUsuario() }, "+ Novo usuário")),
-      el("table", {},
-        el("thead", {}, el("tr", {}, el("th", {}, "Nome"), el("th", {}, "E-mail"), el("th", {}, "Perfil"), el("th", {}, "Acesso"), el("th", {}, "Último acesso"), el("th", {}, ""))),
-        el("tbody", {}, ...lista.map((u) => el("tr", { style: u.ativo ? "" : "opacity:.55" },
-          el("td", {}, u.nome, u.ativo ? "" : " (inativo)"), el("td", {}, u.email),
-          el("td", {}, u.perfil === "admin" ? "Área central (admin)" : "Área fim (editor)"),
-          el("td", { title: (u.servicos || []).map((i) => nomes[i] || i).join("\n") }, u.perfil === "admin" || u.servicos === null ? "Todos os serviços" : `${u.servicos.length} serviço(s)`),
-          el("td", {}, dataBR(u.ultimo_login)),
-          el("td", {}, el("button", { class: "btn pequeno", onclick: () => formUsuario(u) }, "Editar"))))))));
-  } catch (err) { toast(err.message, "erro"); }
-}
-
-function formUsuario(u) {
-  const novo = !u;
-  u = u || { nome: "", email: "", perfil: "editor", servicos: [], ativo: true };
-  const todos = el("input", { type: "checkbox", name: "todos" });
-  todos.checked = u.servicos === null;
-  const filtro = el("input", { type: "search", placeholder: "Filtrar serviços…" });
-  const marcados = new Set(u.servicos || []);
-  const caixas = estado.servicos.map((s) => {
-    const cb = el("input", { type: "checkbox", value: s.id_servico });
-    cb.checked = marcados.has(s.id_servico);
-    return el("label", { "data-busca": `${s.id_servico} ${s.nome || ""}`.toLowerCase() }, cb, `${s.nome || "Serviço"} (#${s.id_servico})`);
-  });
-  const selecao = el("div", { class: "selecao-servicos" }, ...caixas);
-  filtro.addEventListener("input", () => caixas.forEach((c) => (c.hidden = !c.dataset.busca.includes(filtro.value.toLowerCase()))));
-  const perfil = el("select", { name: "perfil" },
-    el("option", { value: "editor" }, "Área fim (editor) — edita e autoriza"),
-    el("option", { value: "admin" }, "Área central (admin) — tudo + publicar, sincronizar, usuários"));
-  perfil.value = u.perfil;
-  const blocoServicos = el("div", { style: "display:grid;gap:6px" },
-    el("label", { style: "display:flex;gap:8px;align-items:center" }, todos, "Acesso a todos os serviços"),
-    filtro, selecao);
-  const ajustar = () => {
-    blocoServicos.hidden = perfil.value === "admin";
-    selecao.hidden = filtro.hidden = todos.checked;
-  };
-  perfil.addEventListener("change", ajustar);
-  todos.addEventListener("change", ajustar);
-  const ativo = el("input", { type: "checkbox", name: "ativo" });
-  ativo.checked = u.ativo;
-
-  const form = el("form", {},
-    el("label", {}, "Nome", el("input", { name: "nome", required: true, value: u.nome })),
-    el("label", {}, "E-mail", el("input", { name: "email", type: "email", required: true, value: u.email })),
-    el("label", {}, "Perfil", perfil),
-    blocoServicos,
-    el("label", {}, novo ? "Senha inicial (mínimo 10 caracteres)" : "Nova senha (deixe em branco para manter)",
-      el("input", { name: "senha", type: "password", minlength: 10, required: novo, autocomplete: "new-password" })),
-    el("label", { style: "display:flex;gap:8px;align-items:center" }, ativo, "Usuário ativo"),
-    el("div", { style: "display:flex;gap:8px" },
-      el("button", { class: "btn primario", type: "submit" }, "Salvar"),
-      el("button", { class: "btn", type: "button", onclick: abrirUsuarios }, "Voltar")));
-  ajustar();
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const servicos = perfil.value === "admin" || todos.checked ? null
-      : caixas.map((c) => c.querySelector("input")).filter((c) => c.checked).map((c) => Number(c.value));
-    if (servicos && !servicos.length && !confirm("Nenhum serviço selecionado: o usuário não verá nenhum serviço. Continuar?")) return;
-    const corpo = { nome: form.nome.value, email: form.email.value, perfil: perfil.value, servicos, ativo: ativo.checked, senha: form.senha.value || null };
-    try {
-      await api(novo ? "POST" : "PUT", novo ? "/api/usuarios" : `/api/usuarios/${u.id}`, corpo);
-      toast("Usuário salvo.", "ok");
-      abrirUsuarios();
-    } catch (err) { toast(err.message, "erro"); }
-  });
-  dialogo(novo ? "Novo usuário" : `Editar usuário — ${u.nome}`, form);
-}
 
 /* ---------------------------------------------------------------- início */
 iniciar();

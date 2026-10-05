@@ -7,18 +7,6 @@ from . import config
 pool: AsyncConnectionPool | None = None
 
 ESQUEMA = """
-CREATE TABLE IF NOT EXISTS usuarios (
-    id            SERIAL PRIMARY KEY,
-    nome          TEXT NOT NULL,
-    email         TEXT NOT NULL UNIQUE,
-    senha_hash    TEXT NOT NULL,
-    perfil        TEXT NOT NULL DEFAULT 'editor' CHECK (perfil IN ('admin', 'editor')),
-    servicos      INTEGER[],              -- NULL = acesso a todos os servicos
-    ativo         BOOLEAN NOT NULL DEFAULT TRUE,
-    criado_em     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    ultimo_login  TIMESTAMPTZ
-);
-
 CREATE TABLE IF NOT EXISTS servicos (
     id_servico          INTEGER PRIMARY KEY,
     nome                TEXT,
@@ -52,6 +40,13 @@ CREATE TABLE IF NOT EXISTS historico (
     criado_em     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS historico_servico_idx ON historico (id_servico, criado_em DESC);
+
+-- Identificacao de quem edita/autoriza (o sistema nao tem login)
+ALTER TABLE servicos
+    ADD COLUMN IF NOT EXISTS autorizado_unidade TEXT,
+    ADD COLUMN IF NOT EXISTS autorizado_email   TEXT,
+    ADD COLUMN IF NOT EXISTS atualizado_unidade TEXT,
+    ADD COLUMN IF NOT EXISTS atualizado_email   TEXT;
 """
 
 

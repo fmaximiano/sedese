@@ -10,35 +10,15 @@
   <script src="/static/app.js" defer></script>
 </head>
 <body>
-  <!-- LOGIN -->
-  <section id="tela-login" class="login" hidden>
-    <form id="form-login" class="login-card">
-      <div class="marca"><span class="marca-icone">✓</span> SEDESE · Serviços no Portal MG</div>
-      <p class="muted">Acesso restrito às áreas da Secretaria de Estado de Desenvolvimento Social.</p>
-      <label>E-mail<input type="email" name="email" autocomplete="username" required></label>
-      <label>Senha<input type="password" name="senha" autocomplete="current-password" required></label>
-      <p id="login-erro" class="erro" role="alert"></p>
-      <button class="btn primario" type="submit">Entrar</button>
-    </form>
-  </section>
-
   <!-- APLICAÇÃO -->
-  <div id="tela-app" class="app" hidden>
+  <div id="tela-app" class="app">
     <header class="topo">
       <button class="btn icone so-mobile" id="btn-menu" aria-label="Lista de serviços">☰</button>
       <div class="marca"><span class="marca-icone">✓</span><span>SEDESE <b>·</b> Serviços no Portal MG</span></div>
       <div class="topo-acoes">
         <div id="sync-status" class="sync-status" hidden></div>
-        <button class="btn so-admin" id="btn-sync" title="Busca novamente todos os serviços na API do Portal MG">⟳<span class="rot"> Sincronizar com Portal MG</span></button>
-        <a class="btn so-admin" id="btn-exportar" href="/api/exportar" title="Baixa os serviços aguardando publicação (original × editado)">⇩<span class="rot"> Exportar pendentes</span></a>
-        <button class="btn so-admin" id="btn-usuarios">👥<span class="rot"> Usuários</span></button>
-        <div class="usuario">
-          <button class="btn" id="btn-usuario"></button>
-          <div class="menu" id="menu-usuario" hidden>
-            <button id="btn-senha">Trocar senha</button>
-            <button id="btn-sair">Sair</button>
-          </div>
-        </div>
+        <button class="btn" id="btn-sync" title="Busca novamente todos os serviços na API do Portal MG">⟳<span class="rot"> Sincronizar com Portal MG</span></button>
+        <a class="btn" id="btn-exportar" href="/api/exportar" title="Baixa os serviços aguardando publicação (original × editado)">⇩<span class="rot"> Exportar pendentes</span></a>
       </div>
     </header>
 
@@ -48,7 +28,7 @@
         <div class="filtros" id="filtros"></div>
       </div>
       <ul class="lista" id="lista" aria-label="Serviços"></ul>
-      <div class="lateral-rodape so-admin">
+      <div class="lateral-rodape">
         <form id="form-add" class="add-servico">
           <input type="number" min="1" name="id" placeholder="Incluir ID de serviço" aria-label="ID do serviço" required>
           <button class="btn" type="submit">Incluir</button>
