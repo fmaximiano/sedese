@@ -1,0 +1,149 @@
+[
+ {
+  "grupo": "Gabinete",
+  "unidades": [
+   "Gabinete",
+   "Gabinete do Secretário de Estado",
+   "Gabinete do Secretário de Estado Adjunto",
+   "Chefia de Gabinete",
+   "Assessoria de Comunicação Social",
+   "Assessoria de Estratégia",
+   "Assessoria Jurídica",
+   "Assessoria de Segurança Alimentar",
+   "Controladoria Setorial",
+   "Assessoria de Relações Institucionais"
+  ]
+ },
+ {
+  "grupo": "Núcleo Estratégico de Integração, Regionalização e Inovação",
+  "unidades": [
+   "Núcleo Estratégico de Integração, Regionalização e Inovação",
+   "Diretoria de Coordenação Regional",
+   "Diretoria Regional Sedese Almenara",
+   "Diretoria Regional Sedese Araçuaí",
+   "Diretoria Regional Sedese Curvelo",
+   "Diretoria Regional Sedese Diamantina",
+   "Diretoria Regional Sedese Divinópolis",
+   "Diretoria Regional Sedese Governador Valadares",
+   "Diretoria Regional Sedese Ituiutaba",
+   "Diretoria Regional Sedese Juiz de Fora",
+   "Diretoria Regional Sedese Metropolitana",
+   "Diretoria Regional Sedese Muriaé",
+   "Diretoria Regional Sedese Paracatu",
+   "Diretoria Regional Sedese Passos",
+   "Diretoria Regional Sedese Patos de Minas",
+   "Diretoria Regional Sedese Poços de Caldas",
+   "Diretoria Regional Sedese Salinas",
+   "Diretoria Regional Sedese São João del Rei",
+   "Diretoria Regional Sedese Teófilo Otoni",
+   "Diretoria Regional Sedese Timóteo",
+   "Diretoria Regional Sedese Uberaba",
+   "Diretoria Regional Sedese Uberlândia",
+   "Diretoria Regional Sedese Varginha",
+   "Diretoria Regional Sedese Montes Claros",
+   "Escritório de Projetos e Inovação",
+   "Escritório de Dados"
+  ]
+ },
+ {
+  "grupo": "Subsecretaria de Planejamento e Gestão",
+  "unidades": [
+   "Subsecretaria de Planejamento e Gestão",
+   "Superintendência de Convênios, Parcerias e Contratos",
+   "Diretoria de Celebração de Convênios e Parcerias",
+   "Diretoria de Gestão de Termos e Contratos",
+   "Diretoria de Monitoramento e Gestão de Convênios e Parcerias",
+   "Diretoria de Prestação de Contas",
+   "Superintendência de Gestão, Finanças e Recursos Humanos",
+   "Diretoria de Contabilidade e Finanças",
+   "Diretoria de Recursos Humanos",
+   "Diretoria de Logística e Aquisições",
+   "Diretoria de Gestão Documental, Informação e Tecnologia",
+   "Assessoria de Planejamento, Modernização e Dados",
+   "Assessoria de Projetos"
+  ]
+ },
+ {
+  "grupo": "Subsecretaria de Assistência Social",
+  "unidades": [
+   "Subsecretaria de Assistência Social",
+   "Superintendência de Gestão do Fundo Estadual de Assistência Social",
+   "Diretoria de Gestão Orçamentária e Financeira do Fundo Estadual de Assistência Social",
+   "Diretoria de Gestão do Cofinanciamento do Suas",
+   "Superintendência de Proteção Básica",
+   "Diretoria de Gestão do CadÚnico e Programas Socioassistenciais",
+   "Diretoria de Serviços e Benefícios Socioassistenciais",
+   "Superintendência de Proteção Social Especial",
+   "Diretoria de Proteção Social de Média Complexidade",
+   "Creas Regional Alto Jequitinhonha",
+   "Creas Regional Médio e Baixo Jequitinhonha",
+   "Creas Regional Mucuri",
+   "Creas Regional Vale do Rio Doce",
+   "Diretoria de Proteção Social de Alta Complexidade",
+   "Superintendência de Gestão do Suas, Vigilância e Capacitação",
+   "Diretoria de Vigilância Socioassistencial",
+   "Diretoria de Educação Permanente do Suas",
+   "Diretoria de Gestão e Regulação do Suas",
+   "Conselho Estadual de Assistência Social - CEAS"
+  ]
+ },
+ {
+  "grupo": "Subsecretaria de Direitos Humanos",
+  "unidades": [
+   "Subsecretaria de Direitos Humanos",
+   "Superintendência de Promoção, Proteção e Participação Social",
+   "Diretoria de Políticas de Promoção à Cidadania e Educação em Direitos Humanos",
+   "Diretoria de Políticas de Proteção e Reparação dos Direitos Humanos",
+   "Diretoria de Monitoramento e Avaliação em Direitos Humanos",
+   "Diretoria de Apoio aos Órgãos Colegiados de Direitos Humanos",
+   "Diretoria de Projetos e Políticas de Direitos Difusos e Coletivos",
+   "Superintendência de Políticas Temáticas Transversais",
+   "Diretoria Estadual de Políticas para Pessoas com Deficiência",
+   "Diretoria Estadual de Políticas para as Juventudes",
+   "Diretoria Estadual de Políticas de Diversidade",
+   "Diretoria Estadual de Políticas para Igualdade Racial e Povos Tradicionais",
+   "Diretoria Estadual de Políticas para Crianças e Adolescentes",
+   "Diretoria Estadual de Políticas para a Pessoa Idosa",
+   "Diretoria Estadual de Políticas para a População em Situação de Rua e Catadores de Materiais Recicláveis",
+   "Diretoria Estadual de Políticas de Migração e de Enfrentamento ao Tráfico de Pessoas e ao Trabalho Escravo"
+  ]
+ },
+ {
+  "grupo": "Subsecretaria de Esportes",
+  "unidades": [
+   "Subsecretaria de Esportes",
+   "Coordenação Estratégica de Políticas Esportivas",
+   "Superintendência de Programas Esportivos",
+   "Diretoria de Incentivo ao Esporte de Participação e Rendimento",
+   "Diretoria de Incentivo ao Desporto Educacional",
+   "Superintendência de Fomento e Incentivo ao Esporte",
+   "Diretoria de Gestão da Lei de Incentivo ao Esporte",
+   "Diretoria de Fomento e Pesquisa de Políticas Esportivas"
+  ]
+ },
+ {
+  "grupo": "Subsecretaria de Política de Habitação",
+  "unidades": [
+   "Subsecretaria de Política de Habitação"
+  ]
+ },
+ {
+  "grupo": "Subsecretaria de Política dos Direitos das Mulheres",
+  "unidades": [
+   "Subsecretaria de Política dos Direitos das Mulheres"
+  ]
+ },
+ {
+  "grupo": "Subsecretaria de Inclusão Produtiva, Trabalho, Emprego e Renda",
+  "unidades": [
+   "Subsecretaria de Inclusão Produtiva, Trabalho, Emprego e Renda",
+   "Superintendência de Gestão e Fomento ao Trabalho e à Economia Popular Solidária",
+   "Diretoria de Monitoramento e Articulação de Oportunidades de Trabalho",
+   "Diretoria de Gestão do Atendimento ao Trabalhador",
+   "Diretoria de Geração de Renda e Economia Popular Solidária",
+   "Superintendência de Educação Profissionalizante",
+   "Diretoria de Implementação e Monitoramento da Educação Profissional",
+   "Diretoria de Articulação e Planejamento da Educação Profissional"
+  ]
+ }
+]

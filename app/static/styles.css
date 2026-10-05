@@ -66,6 +66,7 @@ input, textarea, select {
 input:focus, textarea:focus, select:focus, .rico-area:focus {
   outline: 2px solid var(--primaria); outline-offset: -1px; border-color: transparent;
 }
+label input, label select, label textarea { font-weight: 400; }
 input[readonly] { background: var(--surface-2); color: var(--muted); }
 textarea { resize: vertical; min-height: 64px; }
 input[type="checkbox"] { width: auto; accent-color: var(--primaria); transform: scale(1.15); }
@@ -87,13 +88,7 @@ input[type="checkbox"] { width: auto; accent-color: var(--primaria); transform: 
 .btn.grande { padding: 11px 22px; font-size: 16px; }
 .btn .contador { background: var(--primaria-suave); color: var(--primaria); border-radius: 999px; padding: 0 7px; font-weight: 700; font-size: 12px; }
 
-/* ---------- login ---------- */
-.login { min-height: 100%; display: grid; place-items: center; padding: 16px; }
-.login-card {
-  width: min(400px, 100%); background: var(--surface); border: 1px solid var(--borda);
-  border-radius: 14px; padding: 28px; box-shadow: var(--sombra); display: grid; gap: 14px;
-}
-.login-card label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; }
+/* ---------- marca ---------- */
 .marca { display: flex; align-items: center; gap: 10px; font-weight: 700; }
 .marca-icone {
   display: inline-grid; place-items: center; width: 28px; height: 28px; border-radius: 7px;
@@ -110,13 +105,6 @@ input[type="checkbox"] { width: auto; accent-color: var(--primaria); transform: 
   background: var(--surface); border-bottom: 1px solid var(--borda);
 }
 .topo-acoes { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
-.usuario { position: relative; }
-.menu {
-  position: absolute; right: 0; top: calc(100% + 4px); background: var(--surface); border: 1px solid var(--borda);
-  border-radius: 8px; box-shadow: var(--sombra); z-index: 30; min-width: 170px; padding: 4px;
-}
-.menu button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 10px; font: inherit; color: inherit; cursor: pointer; border-radius: 6px; }
-.menu button:hover { background: var(--surface-2); }
 .sync-status { font-size: 13px; color: var(--muted); }
 
 .lateral {
@@ -241,7 +229,18 @@ input[type="checkbox"] { width: auto; accent-color: var(--primaria); transform: 
 .envio-grade { display: grid; gap: 12px; }
 .envio-grade label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; }
 .envio-acoes { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }
-.envio-acoes .espaco { flex: 1; }
+.ident-titulo { font-size: 15px; margin: 18px 0 2px; }
+.ident-grade { display: grid; grid-template-columns: 1fr 1.4fr 1fr; gap: 12px; }
+.ident-grade label { display: grid; gap: 4px; font-weight: 600; font-size: 14px; align-content: start; }
+.obrigatorio { color: var(--erro); }
+.erro-campo { color: var(--erro); font-weight: 400; font-size: 12.5px; min-height: 0; }
+.erro-campo:empty { display: none; }
+[aria-invalid="true"] { border-color: var(--erro); background: var(--erro-suave); }
+.central {
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--borda);
+}
+.central-rotulo { font-size: 13px; color: var(--muted); font-weight: 600; margin-right: 4px; }
 
 .barra-pendente {
   position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40;
@@ -280,6 +279,7 @@ th { font-size: 12.5px; color: var(--muted); font-weight: 600; }
   .so-mobile { display: inline-flex; }
   .conteudo { padding: 16px 16px 120px; }
   .campo { grid-template-columns: 1fr; }
+  .ident-grade { grid-template-columns: 1fr; }
   .campo > .rotulo { padding-top: 0; }
   .topo .marca span:last-child, .topo .rot { display: none; }
   .topo { padding: 8px 10px; gap: 8px; }
