@@ -78,7 +78,7 @@ app/
   db.py            conexão com o Neon e criação das tabelas
   unidades_sedese.py  unidades da página "Quem é Quem" (atualiza a cada 24 h; reserva em unidades_sedese.json)
   config.py        leitura das variáveis de ambiente
-  servicos_ids.py  lista padrão dos 109 serviços
+  servicos_ids.py  lista padrão dos serviços (tirar um ID daqui o oculta na próxima inicialização)
   servidor.py      ponto de entrada (uvicorn)
   static/          interface (index.html, app.js, styles.css, vendor/purify.min.js)
 ```

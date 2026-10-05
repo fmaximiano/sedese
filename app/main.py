@@ -32,8 +32,16 @@ def ids_iniciais() -> list[int]:
 async def ciclo_vida(app: FastAPI):
     await db.abrir()
     async with db.conexao() as con:
+        # A lista padrão manda: entra o que está nela e sai o que foi retirado (os dados ficam no banco).
+        # Serviços incluídos pela tela (origem 'manual') não são afetados.
+        ids = ids_iniciais()
         await con.execute(
-            "INSERT INTO servicos (id_servico) SELECT unnest(%s::int[]) ON CONFLICT DO NOTHING", (ids_iniciais(),)
+            """INSERT INTO servicos (id_servico, origem) SELECT unnest(%s::int[]), 'padrao'
+               ON CONFLICT (id_servico) DO UPDATE SET ativo = TRUE, origem = 'padrao'""",
+            (ids,),
+        )
+        await con.execute(
+            "UPDATE servicos SET ativo = FALSE WHERE origem = 'padrao' AND ativo AND NOT (id_servico = ANY(%s))", (ids,)
         )
     yield
     await db.fechar()
@@ -309,8 +317,9 @@ async def adicionar(dados: NovoServico):
     quem = await validar_identificacao(dados.identificacao)
     async with db.conexao() as con:
         await con.execute(
-            """INSERT INTO servicos (id_servico) VALUES (%s)
-               ON CONFLICT (id_servico) DO UPDATE SET ativo = TRUE""",
+            """INSERT INTO servicos (id_servico, origem) VALUES (%s, 'manual')
+               ON CONFLICT (id_servico) DO UPDATE SET ativo = TRUE,
+                   origem = CASE WHEN servicos.ativo THEN servicos.origem ELSE 'manual' END""",
             (dados.id_servico,),
         )
         await registrar(con, dados.id_servico, quem, "adicionou_servico")

@@ -46,7 +46,9 @@ ALTER TABLE servicos
     ADD COLUMN IF NOT EXISTS autorizado_unidade TEXT,
     ADD COLUMN IF NOT EXISTS autorizado_email   TEXT,
     ADD COLUMN IF NOT EXISTS atualizado_unidade TEXT,
-    ADD COLUMN IF NOT EXISTS atualizado_email   TEXT;
+    ADD COLUMN IF NOT EXISTS atualizado_email   TEXT,
+    -- 'padrao' = veio da lista do codigo/SERVICOS_IDS; 'manual' = incluido pela tela
+    ADD COLUMN IF NOT EXISTS origem             TEXT NOT NULL DEFAULT 'padrao';
 """
 
 
