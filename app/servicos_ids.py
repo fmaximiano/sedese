@@ -1,8 +1,4 @@
-"""Lista padrão de serviços da SEDESE publicados no Portal MG."""
+"""Lista padrão de serviços da SEDESE publicados no Portal MG: a união dos serviços das áreas (app/areas.py)."""
+from .areas import AREAS
 
-SERVICOS_PADRAO = [
-    121320, 18844, 20740, 121317, 121429, 20747, 104656, 19842, 18846, 120454, 12965, 120434, 111336,
-    21884, 20770, 120647, 20750, 20763, 20785, 20764, 20781, 20765, 20753, 20754, 20755, 121181, 20749,
-    120436, 20751, 20786, 20787, 120639, 13468, 120449, 20741, 13463, 18849, 18663, 19276, 20743, 18664,
-    12966, 21197, 20777, 20746, 21342, 20784, 20748
-]
+SERVICOS_PADRAO = [i for a in AREAS.values() for i in a["servicos"]]

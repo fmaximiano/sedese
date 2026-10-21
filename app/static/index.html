@@ -10,8 +10,27 @@
   <script src="/static/app.js" defer></script>
 </head>
 <body>
+  <!-- ENTRADA -->
+  <main id="tela-login" class="tela-login" hidden>
+    <form id="form-login" class="cartao-login" novalidate>
+      <div class="marca"><span class="marca-icone">✓</span><span>SEDESE <b>·</b> Serviços no Portal MG</span></div>
+      <p class="muted">Entre com o acesso da sua área para revisar os serviços dela.</p>
+      <label>Área
+        <select name="acesso" required><option value="">Selecione…</option></select>
+      </label>
+      <label id="login-email" hidden>E-mail
+        <input type="email" name="email" autocomplete="username">
+      </label>
+      <label>Senha
+        <input type="password" name="senha" required autocomplete="current-password">
+      </label>
+      <p class="erro" role="alert"></p>
+      <button class="btn primario grande" type="submit">Entrar</button>
+    </form>
+  </main>
+
   <!-- APLICAÇÃO -->
-  <div id="tela-app" class="app">
+  <div id="tela-app" class="app" hidden>
     <header class="topo">
       <button class="btn icone so-mobile" id="btn-menu" aria-label="Lista de serviços">☰</button>
       <div class="marca"><span class="marca-icone">✓</span><span>SEDESE <b>·</b> Serviços no Portal MG</span></div>
@@ -20,20 +39,21 @@
         <button class="btn so-admin enviados" id="btn-enviados" title="Serviços enviados pelas áreas para publicação" hidden>📥<span class="rot"> Enviados</span> <span class="contador" id="n-enviados">0</span></button>
         <button class="btn so-admin" id="btn-sync" hidden title="Busca novamente todos os serviços na API do Portal MG">⟳<span class="rot"> Sincronizar com Portal MG</span></button>
         <a class="btn so-admin" id="btn-exportar" hidden href="/api/exportar" title="Baixa os serviços aguardando publicação (original × editado)">⇩<span class="rot"> Exportar pendentes</span></a>
-        <button class="btn" id="btn-entrar" title="Acesso do administrador" hidden>🔒<span class="rot"> Área central</span></button>
-        <button class="btn so-admin" id="btn-sair" hidden>👤<span class="rot"> Admin · Sair</span></button>
+        <button class="btn" id="btn-sair">👤<span class="rot" id="rot-sair"> Sair</span></button>
       </div>
     </header>
 
     <aside class="lateral" id="lateral">
       <div class="lateral-topo">
         <input type="search" id="busca" placeholder="Buscar por nome ou nº do serviço…" aria-label="Buscar serviço">
+        <select id="filtro-area" class="so-admin" aria-label="Filtrar por área" hidden><option value="">Todas as áreas</option></select>
         <div class="filtros" id="filtros"></div>
       </div>
       <ul class="lista" id="lista" aria-label="Serviços"></ul>
       <div class="lateral-rodape so-admin" hidden>
         <form id="form-add" class="add-servico">
-          <input type="number" min="1" name="id" placeholder="Incluir ID de serviço" aria-label="ID do serviço" required>
+          <input type="number" min="1" name="id" placeholder="ID do serviço" aria-label="ID do serviço" required>
+          <select name="area" aria-label="Área do serviço"><option value="">Sem área</option></select>
           <button class="btn" type="submit">Incluir</button>
         </form>
       </div>
