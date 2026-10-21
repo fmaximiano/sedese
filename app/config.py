@@ -2,6 +2,8 @@
 import hashlib
 import os
 
+from .areas import AREAS
+
 
 def _env(nome: str, padrao: str | None = None, obrigatorio: bool = False) -> str | None:
     valor = os.environ.get(nome, padrao)
@@ -34,6 +36,9 @@ ADMIN_EMAIL = (_env("ADMIN_EMAIL", "") or "").lower()
 ADMIN_PASSWORD = _env("ADMIN_PASSWORD", "")
 ADMIN_NOME = _env("ADMIN_NOME", "Administrador SEDESE")
 ADMIN_UNIDADE = _env("ADMIN_UNIDADE", "Área central (administrador)")
+
+# Senha de cada área fim: SENHA_SUBAS, SENHA_SUBESP... (siglas em app/areas.py). Sem senha, a área não entra.
+SENHAS_AREAS = {sigla: _env(f"SENHA_{sigla}", "") or "" for sigla in AREAS}
 
 # Assinatura do cookie de sessão. Opcional: se ausente, é derivada da senha do admin e do banco.
 SESSION_SECRET = _env("SESSION_SECRET", "") or hashlib.sha256(

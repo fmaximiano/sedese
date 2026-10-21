@@ -41,14 +41,16 @@ CREATE TABLE IF NOT EXISTS historico (
 );
 CREATE INDEX IF NOT EXISTS historico_servico_idx ON historico (id_servico, criado_em DESC);
 
--- Identificacao de quem edita/autoriza (o publico nao tem login)
+-- Identificacao de quem edita/autoriza (o login da area e compartilhado)
 ALTER TABLE servicos
     ADD COLUMN IF NOT EXISTS autorizado_unidade TEXT,
     ADD COLUMN IF NOT EXISTS autorizado_email   TEXT,
     ADD COLUMN IF NOT EXISTS atualizado_unidade TEXT,
     ADD COLUMN IF NOT EXISTS atualizado_email   TEXT,
     -- 'padrao' = veio da lista do codigo/SERVICOS_IDS; 'manual' = incluido pela tela
-    ADD COLUMN IF NOT EXISTS origem             TEXT NOT NULL DEFAULT 'padrao';
+    ADD COLUMN IF NOT EXISTS origem             TEXT NOT NULL DEFAULT 'padrao',
+    -- sigla da area fim dona do servico (app/areas.py); NULL = so o administrador ve
+    ADD COLUMN IF NOT EXISTS area               TEXT;
 """
 
 

@@ -37,7 +37,9 @@ const ACOES = {
 
 const estado = {
   admin: false,            // administrador logado (área central)
-  loginHabilitado: false,
+  area: null,              // {sigla, nome} da área fim logada
+  areas: {},               // sigla -> nome (só para o administrador)
+  filtroArea: "",
   ident: { responsavel: "", unidade: "", email: "" }, // quem está editando (lembrado neste navegador)
   unidades: [],            // unidades da SEDESE agrupadas (página "Quem é Quem")
   nomesUnidades: new Set(),
@@ -103,6 +105,13 @@ async function api(metodo, url, corpo) {
   const r = await fetch(url, opts);
   let dados = null;
   try { dados = await r.json(); } catch { /* sem corpo */ }
+  if (r.status === 401 && url !== "/api/login") {
+    // Sessão expirou ou a senha foi trocada: volta para a tela de entrada.
+    estado.base = null;
+    alert("Sua sessão foi encerrada. Entre novamente.");
+    location.reload();
+    throw new Error("Sessão encerrada.");
+  }
   if (!r.ok) {
     let msg = dados?.detail;
     if (Array.isArray(msg)) msg = msg.map((d) => d.msg).join("; ");
@@ -467,6 +476,7 @@ function textoValor(v) {
 }
 
 async function copiar(v) {
+  if (typeof v === "string" && ehHTML(v)) v = sanitizar(v); // o que vai para o Portal MG passa pelo mesmo filtro da tela
   try {
     if (typeof v === "string" && ehHTML(v) && window.ClipboardItem) {
       await navigator.clipboard.write([new ClipboardItem({
@@ -516,7 +526,7 @@ function dialogo(titulo, conteudo) {
   return d;
 }
 
-/* ---------------------------------------------------------------- identificação (o sistema não tem login) */
+/* ---------------------------------------------------------------- identificação (o login da área é compartilhado) */
 const EMAIL_SEDESE = /^[A-Za-z0-9._%+-]+@social\.mg\.gov\.br$/i;
 const CHAVE_IDENT = "sedese.identificacao";
 
@@ -547,7 +557,9 @@ function camposIdentificacao() {
   const unid = el("select", { name: "unidade", required: true },
     el("option", { value: "" }, "Selecione a unidade…"),
     ...estado.unidades.map((g) => el("optgroup", { label: g.grupo }, ...g.unidades.map((u) => el("option", { value: u }, u)))));
-  unid.value = estado.nomesUnidades.has(estado.ident.unidade) ? estado.ident.unidade : "";
+  unid.value = estado.nomesUnidades.has(estado.ident.unidade) ? estado.ident.unidade
+    : estado.nomesUnidades.size === 1 ? [...estado.nomesUnidades][0] : "";
+  if (unid.value !== estado.ident.unidade) { estado.ident.unidade = unid.value; guardarIdent(); }
   const email = el("input", { type: "email", name: "email", maxlength: 200, required: true, autocomplete: "email", placeholder: "nome@social.mg.gov.br" });
   email.value = estado.ident.email;
   const box = el("div", { class: "ident-grade" },
@@ -605,13 +617,15 @@ function exigirIdentificacao() {
 
 async function iniciar() {
   estado.ident = carregarIdent();
-  const [cfg, unidades] = await Promise.all([
-    api("GET", "/api/config").catch(() => ({})),
-    api("GET", "/api/unidades-sedese").catch(() => []),
-  ]);
-  estado.unidades = unidades;
-  estado.nomesUnidades = new Set(unidades.flatMap((g) => g.unidades));
+  let cfg;
+  try { cfg = await api("GET", "/api/config"); } catch (err) { return toast(err.message, "erro"); }
+  if (!cfg.logado) return mostrarLogin(cfg);
+  $("#tela-app").hidden = false;
   aplicarPerfil(cfg);
+  if (!estado.admin) {
+    estado.unidades = await api("GET", "/api/unidades-sedese").catch(() => []);
+    estado.nomesUnidades = new Set(estado.unidades.flatMap((g) => g.unidades));
+  }
   await carregarLista();
   if (estado.admin) {
     focarEnviados();
@@ -620,14 +634,53 @@ async function iniciar() {
   abrirPelaURL();
 }
 
-/* ---------------------------------------------------------------- administrador */
+/* ---------------------------------------------------------------- entrada e perfil */
+function mostrarLogin(cfg) {
+  const form = $("#form-login");
+  const erro = form.querySelector(".erro");
+  form.acesso.append(...(cfg.acessos || []).map((a) => el("option", { value: a.valor }, a.nome)));
+  if (!cfg.acessos?.length) erro.textContent = "Nenhum acesso configurado. Defina as senhas nas variáveis do Railway.";
+  try { form.acesso.value = localStorage.getItem("sedese.acesso") || ""; } catch { /* sem armazenamento */ }
+  const ajustar = () => {
+    const admin = form.acesso.value === "admin";
+    $("#login-email").hidden = !admin;
+    form.email.required = admin;
+  };
+  form.acesso.addEventListener("change", ajustar);
+  ajustar();
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!form.acesso.value) return (erro.textContent = "Selecione a área.");
+    if (!form.senha.value) return (erro.textContent = "Informe a senha.");
+    const botao = form.querySelector("button");
+    botao.disabled = true;
+    try {
+      await api("POST", "/api/login", { acesso: form.acesso.value, email: form.email.value, senha: form.senha.value });
+      try { localStorage.setItem("sedese.acesso", form.acesso.value); } catch { /* sem armazenamento */ }
+      location.reload();
+    } catch (err) {
+      erro.textContent = err.message;
+      form.senha.value = "";
+      botao.disabled = false;
+    }
+  });
+  $("#tela-login").hidden = false;
+  (form.acesso.value ? form.senha : form.acesso).focus();
+}
+
 function aplicarPerfil(cfg) {
   estado.admin = !!cfg.admin;
-  estado.loginHabilitado = !!cfg.login_habilitado;
+  estado.area = cfg.area || null;
+  estado.areas = cfg.areas || {};
   document.body.classList.toggle("modo-admin", estado.admin);
   document.querySelectorAll(".so-admin").forEach((n) => (n.hidden = !estado.admin));
-  $("#btn-entrar").hidden = estado.admin || !estado.loginHabilitado;
-  $("#btn-sair").title = estado.admin ? `Sair (${cfg.admin_nome})` : "";
+  $("#rot-sair").textContent = estado.admin ? " Admin · Sair" : ` ${estado.area.sigla} · Sair`;
+  $("#btn-sair").title = `Sair (${estado.admin ? cfg.admin_nome : estado.area.nome})`;
+  if (estado.admin) {
+    const opcoes = () => Object.entries(estado.areas).map(([sigla, nome]) => el("option", { value: sigla }, `${sigla} — ${nome}`));
+    $("#filtro-area").append(...opcoes(), el("option", { value: "-" }, "Sem área"));
+    $("#form-add").area.append(...opcoes());
+  }
   if (estado.admin && cfg.portal_configurado === false) {
     toast("Variáveis do Portal MG não configuradas no Railway — a sincronização está desativada.", "erro");
   }
@@ -641,55 +694,11 @@ function focarEnviados() {
   }
 }
 
-async function trocarPerfil() {
-  const f = formEnvio();
-  aplicarPerfil(await api("GET", "/api/config"));
-  await carregarLista();
-  if (!estado.admin && estado.filtro === "aguardando_publicacao") estado.filtro = "todos";
-  if (estado.admin) {
-    focarEnviados();
-    acompanharSync(false);
-  }
-  if (!estado.atual) return desenharLista();
-  if (!estado.admin && !estado.servicos.some((x) => x.id_servico === estado.atual.id_servico)) {
-    estado.base = null; // o serviço deixou de ser visível sem o login
-    location.hash = "";
-    return;
-  }
-  desenharServico(); // mantém a edição em andamento
-  $("#f-observacoes").value = f.observacoes;
-  $("#f-autorizado").checked = f.autorizado;
-  atualizarPendente();
-}
-
-$("#btn-entrar").addEventListener("click", () => {
-  const form = el("form", {},
-    el("p", { class: "muted", style: "margin:0" }, "Acesso exclusivo do administrador da área central."),
-    el("label", {}, "E-mail", el("input", { type: "email", name: "email", required: true, autocomplete: "username" })),
-    el("label", {}, "Senha", el("input", { type: "password", name: "senha", required: true, autocomplete: "current-password" })),
-    el("p", { class: "erro", role: "alert" }),
-    el("div", {}, el("button", { class: "btn primario", type: "submit" }, "Entrar")));
-  form.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    try {
-      await api("POST", "/api/login", { email: form.email.value, senha: form.senha.value });
-      $("#dialogo").close();
-      await trocarPerfil();
-      toast("Você entrou como administrador.", "ok");
-    } catch (err) {
-      form.querySelector(".erro").textContent = err.message;
-    }
-  });
-  dialogo("Entrar — administrador", form);
-  form.email.focus();
-});
-
 $("#btn-sair").addEventListener("click", async () => {
-  await api("POST", "/api/logout");
-  clearTimeout(timerSync);
-  $("#sync-status").hidden = true;
-  await trocarPerfil();
-  toast("Você saiu da área do administrador.");
+  if (temPendencias() && !confirm("Há alterações não salvas neste serviço. Sair mesmo assim?")) return;
+  estado.base = null;
+  await api("POST", "/api/logout").catch(() => {});
+  location.replace(location.pathname);
 });
 
 $("#btn-enviados").addEventListener("click", () => {
@@ -710,8 +719,9 @@ async function carregarLista() {
 }
 
 function desenharLista() {
-  const contagem = { todos: estado.servicos.length };
-  for (const s of estado.servicos) {
+  const daArea = estado.servicos.filter((s) => !estado.filtroArea || (s.area || "-") === estado.filtroArea);
+  const contagem = { todos: daArea.length };
+  for (const s of daArea) {
     contagem[s.status] = (contagem[s.status] || 0) + 1;
     if (grupoStatus(s) === "problemas") contagem.problemas = (contagem.problemas || 0) + 1;
   }
@@ -720,7 +730,7 @@ function desenharLista() {
       rot, el("span", { class: "n" }, contagem[k] || 0))));
 
   const termo = estado.busca.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
-  const visiveis = estado.servicos.filter((s) => {
+  const visiveis = daArea.filter((s) => {
     if (estado.filtro !== "todos" && (estado.filtro === "problemas" ? grupoStatus(s) !== "problemas" : s.status !== estado.filtro)) return false;
     if (!termo) return true;
     const alvo = `${s.id_servico} ${s.nome || ""}`.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -731,6 +741,7 @@ function desenharLista() {
       el("span", { class: "nome" }, s.nome || `Serviço ${s.id_servico}`),
       el("span", { class: "meta" },
         el("span", {}, `#${s.id_servico}`),
+        estado.admin ? el("span", { class: "selo area", title: estado.areas[s.area] || "Sem área" }, s.area || "sem área") : null,
         el("span", { class: `selo ${s.erro_sincronizacao ? "erro" : s.status}` }, s.erro_sincronizacao ? "Erro na sincronização" : STATUS[s.status]),
         s.portal_alterado ? el("span", { class: "selo em_edicao", title: "O Portal MG mudou depois que a edição começou" }, "⚠ Portal mudou") : null,
         s.qtd_unidades != null ? el("span", { title: "Unidades" }, `🏢 ${s.qtd_unidades}`) : null,
@@ -738,7 +749,7 @@ function desenharLista() {
       )))));
   if (!visiveis.length) $("#lista").append(el("li", { class: "muted", style: "padding:12px" }, "Nenhum serviço encontrado."));
 
-  const n = contagem.aguardando_publicacao || 0;
+  const n = estado.servicos.filter((s) => s.status === "aguardando_publicacao").length;
   $("#n-enviados").textContent = n;
   $("#btn-enviados").classList.toggle("destaque", n > 0);
   $("#resumo").replaceChildren(...[
@@ -748,13 +759,14 @@ function desenharLista() {
 }
 
 $("#busca").addEventListener("input", (e) => { estado.busca = e.target.value; desenharLista(); });
+$("#filtro-area").addEventListener("change", (e) => { estado.filtroArea = e.target.value; desenharLista(); });
 $("#btn-menu").addEventListener("click", () => $("#lateral").classList.toggle("aberta"));
 
 $("#form-add").addEventListener("submit", async (e) => {
   e.preventDefault();
   const id = Number(e.target.id.value);
   try {
-    await api("POST", "/api/servicos", { id_servico: id });
+    await api("POST", "/api/servicos", { id_servico: id, area: e.target.area.value || null });
     e.target.reset();
     await carregarLista();
     toast(`Serviço ${id} incluído.`, "ok");
@@ -811,13 +823,17 @@ async function abrirServico(id) {
 function carregarNoEditor(s) {
   estado.atual = s;
   estado.editado = clonar(s.editado);
-  estado.base = { editado: clonar(s.editado), observacoes: s.observacoes || "", autorizado: s.autorizado };
+  estado.base = { editado: clonar(s.editado), observacoes: s.observacoes || "", autorizado: autorizacaoInicial(s) };
   desenharServico();
   desenharLista();
   atualizarPendente();
 }
 
 /* ---------------------------------------------------------------- tela do serviço */
+// Para a área, a caixa de autorização começa sempre desmarcada: um serviço já publicado não pode
+// ser reenviado sem querer só porque a autorização anterior ficou registrada.
+const autorizacaoInicial = (s) => estado.admin && !!s.autorizado;
+
 function formEnvio() {
   return {
     observacoes: $("#f-observacoes")?.value ?? "",
@@ -848,6 +864,7 @@ function desenharServico() {
     el("div", { class: "linha" },
       el("span", { class: `selo ${s.status}` }, STATUS[s.status]),
       el("span", {}, `Serviço nº ${s.id_servico}`),
+      estado.admin ? el("span", {}, `Área: ${s.area ? `${s.area} — ${estado.areas[s.area] || ""}` : "nenhuma (só admin)"}`) : null,
       el("span", {}, `Sincronizado em ${dataBR(s.sincronizado_em)}`),
       s.atualizado_por ? el("span", {}, `Última edição: ${quem(s.atualizado_por, s.atualizado_unidade)}, ${dataBR(s.atualizado_em)}`) : null),
     el("h1", {}, s.nome || `Serviço ${s.id_servico}`),
@@ -901,7 +918,7 @@ const quem = (nome, unidade) => (unidade ? `${nome} (${unidade})` : nome);
 function painelEnvio() {
   const s = estado.atual;
   const autorizado = el("input", { type: "checkbox", id: "f-autorizado" });
-  autorizado.checked = !!s.autorizado;
+  autorizado.checked = autorizacaoInicial(s);
   autorizado.addEventListener("change", atualizarPendente);
   const obs = el("textarea", { id: "f-observacoes", rows: 3, maxlength: 5000, placeholder: "Contexto das alterações, prazos, normas que fundamentam a mudança…" });
   obs.value = s.observacoes || "";

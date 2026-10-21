@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from starlette.middleware.sessions import SessionMiddleware
 
 from . import auth, config, db, portalmg, unidades_sedese
+from .areas import AREA_DO_SERVICO, AREAS, unidades_da_area
 from .servicos_ids import SERVICOS_PADRAO
 
 STATIC = Path(__file__).parent / "static"
@@ -43,6 +44,12 @@ async def ciclo_vida(app: FastAPI):
         )
         await con.execute(
             "UPDATE servicos SET ativo = FALSE WHERE origem = 'padrao' AND ativo AND NOT (id_servico = ANY(%s))", (ids,)
+        )
+        # A divisão por área (app/areas.py) também manda sobre os IDs que ela lista.
+        await con.execute(
+            """UPDATE servicos s SET area = m.area FROM unnest(%s::int[], %s::text[]) AS m(id, area)
+               WHERE s.id_servico = m.id AND s.area IS DISTINCT FROM m.area""",
+            (list(AREA_DO_SERVICO), list(AREA_DO_SERVICO.values())),
         )
     yield
     await db.fechar()
@@ -78,7 +85,7 @@ async def seguranca(request: Request, call_next):
 app.add_middleware(
     SessionMiddleware,
     secret_key=config.SESSION_SECRET,
-    session_cookie="sedese_admin",
+    session_cookie="sedese_sessao",
     max_age=12 * 3600,
     same_site="strict",
     https_only=config.COOKIE_SECURE,
@@ -90,7 +97,7 @@ def agora() -> datetime:
     return datetime.now(timezone.utc)
 
 
-# Sem login: limite simples de gravações por IP (evita abuso e cliques repetidos).
+# Limite simples de gravações por IP (evita abuso e cliques repetidos).
 _JANELA_LIMITE, _MAX_POR_JANELA = 60, 60
 _gravacoes: dict[str, deque] = defaultdict(deque)
 
@@ -100,6 +107,9 @@ def limite_excedido(ip: str) -> bool:
     while fila and t - fila[0] > _JANELA_LIMITE:
         fila.popleft()
     fila.append(t)
+    if len(_gravacoes) > 10_000:  # não deixa a memória crescer sem limite
+        for chave in [k for k, f in _gravacoes.items() if t - f[-1] > _JANELA_LIMITE]:
+            del _gravacoes[chave]
     return len(fila) > _MAX_POR_JANELA
 
 
@@ -113,24 +123,35 @@ class Identificacao(BaseModel):
     email: str = Field(max_length=200)
 
 
-async def validar_identificacao(ident: Identificacao | None) -> dict:
+async def unidades_permitidas(area: str | None) -> list[dict]:
+    """Unidades da página "Quem é Quem", agrupadas; para uma área, só as dela (todas, se a página mudou)."""
+    dados = await unidades_sedese.listar()
+    if not area:
+        return dados
+    for fonte in (dados, unidades_sedese.reserva()):
+        if unidades := unidades_da_area(area, fonte):
+            return [{"grupo": AREAS[area]["nome"], "unidades": unidades}]
+    return dados
+
+
+async def validar_identificacao(ident: Identificacao | None, area: str) -> dict:
+    """O login da área é compartilhado: quem salva se identifica, e isso vai para o histórico."""
     if ident is None:
         raise HTTPException(400, "Informe responsável, unidade e e-mail.")
     responsavel = re.sub(r"\s+", " ", ident.responsavel).strip()
     email = ident.email.strip().lower()
     if len(responsavel) < 3:
         raise HTTPException(400, "Informe o nome do responsável.")
-    validas = unidades_sedese.todas(await unidades_sedese.listar()) | unidades_sedese.todas(unidades_sedese.reserva())
-    if ident.unidade not in validas:
+    if ident.unidade not in unidades_sedese.todas(await unidades_permitidas(area)):
         raise HTTPException(400, "Selecione a unidade na lista.")
     if not EMAIL_SEDESE.match(email):
         raise HTTPException(400, "O e-mail deve terminar em @social.mg.gov.br.")
-    return {"nome": responsavel, "unidade": ident.unidade, "email": email}
+    return {"nome": responsavel, "unidade": ident.unidade, "email": email, "area": area}
 
 
 async def registrar(con, id_servico: int | None, quem: dict | None, acao: str, detalhe: Any = None) -> None:
     if quem:
-        detalhe = {**(detalhe or {}), "unidade": quem["unidade"], "email": quem["email"]}
+        detalhe = {**(detalhe or {}), "unidade": quem["unidade"], "email": quem["email"], "area": quem.get("area")}
     await con.execute(
         "INSERT INTO historico (id_servico, usuario_nome, acao, detalhe) VALUES (%s, %s, %s, %s)",
         (id_servico, quem["nome"] if quem else "Sistema", acao, Json(detalhe) if detalhe is not None else None),
@@ -152,40 +173,46 @@ async def saude():
 
 @app.get("/api/config")
 async def configuracao(request: Request):
-    admin = auth.eh_admin(request)
+    u = auth.usuario(request)
+    acessos = [{"valor": s, "nome": f"{a['nome']} ({s})"} for s, a in AREAS.items() if auth.senha_area(s)]
+    if auth.admin_configurado():
+        acessos.append({"valor": "admin", "nome": "Área central (administrador)"})
     return {
-        "portal_configurado": portalmg.configurado(),
-        "login_habilitado": auth.admin_configurado(),
-        "admin": admin,
-        "admin_nome": config.ADMIN_NOME if admin else None,
+        "acessos": acessos,  # opções da tela de entrada
+        "logado": bool(u),
+        "admin": bool(u and u["admin"]),
+        "area": u and u["area"] and {"sigla": u["area"], "nome": AREAS[u["area"]]["nome"]},
+        "areas": {s: a["nome"] for s, a in AREAS.items()} if u and u["admin"] else None,
+        "admin_nome": config.ADMIN_NOME if u and u["admin"] else None,
+        "portal_configurado": portalmg.configurado() if u and u["admin"] else None,
     }
 
 
 @app.get("/api/unidades-sedese")
-async def unidades():
-    return await unidades_sedese.listar()
+async def unidades(u: dict = Depends(auth.exigir_login)):
+    return await unidades_permitidas(u["area"])
 
 
-# ---------------------------------------------------------------- administrador
+# ---------------------------------------------------------------- login (administrador e áreas)
 class Login(BaseModel):
-    email: str = Field(max_length=200)
+    acesso: str = Field(max_length=20)  # "admin" ou a sigla da área
+    email: str = Field(default="", max_length=200)  # só para o administrador
     senha: str = Field(max_length=200)
 
 
 @app.post("/api/login")
 async def login(dados: Login, request: Request):
-    if not auth.admin_configurado():
-        raise HTTPException(503, "Administrador não configurado (variáveis ADMIN_EMAIL e ADMIN_PASSWORD no Railway).")
+    acesso = dados.acesso if dados.acesso == "admin" or dados.acesso in AREAS else "?"
     ip = request.client.host if request.client else "?"
-    if auth.bloqueado(ip):
+    if auth.bloqueado(ip, acesso):
         raise HTTPException(429, "Muitas tentativas. Aguarde 15 minutos e tente novamente.")
-    if not auth.conferir(dados.email, dados.senha):
-        auth.registrar_falha(ip)
+    ok = auth.conferir_admin(dados.email, dados.senha) if acesso == "admin" else auth.conferir_area(acesso, dados.senha)
+    if not ok:
+        auth.registrar_falha(ip, acesso)
         await asyncio.sleep(0.5)
-        raise HTTPException(401, "E-mail ou senha incorretos.")
+        raise HTTPException(401, "E-mail ou senha incorretos." if acesso == "admin" else "Senha incorreta.")
     auth.limpar_falhas(ip)
-    request.session.clear()
-    request.session["admin"] = auth.impressao()
+    auth.iniciar_sessao(request, acesso)
     return {"ok": True}
 
 
@@ -197,71 +224,82 @@ async def logout(request: Request):
 
 # ---------------------------------------------------------------- serviços
 CAMPOS_LISTA = """
-    id_servico, nome, status, autorizado, autorizado_por, autorizado_unidade, autorizado_email, autorizado_em,
+    id_servico, nome, area, status, autorizado, autorizado_por, autorizado_unidade, autorizado_email, autorizado_em,
     atualizado_por, atualizado_unidade, atualizado_email, atualizado_em,
     sincronizado_em, erro_sincronizacao, portal_alterado, publicado_por, publicado_em, observacoes, versao,
     tem_alteracoes,
     CASE WHEN json_typeof(editado->'unidades') = 'array' THEN json_array_length(editado->'unidades') END AS qtd_unidades,
     CASE WHEN json_typeof(editado->'etapas') = 'array' THEN json_array_length(editado->'etapas') END AS qtd_etapas
 """
-# O público só vê serviços já sincronizados que não estejam com a área central para publicação.
-VISIVEL_AO_PUBLICO = "original IS NOT NULL AND status <> 'aguardando_publicacao'"
+# A área só vê os seus serviços já sincronizados que não estejam com a área central para publicação.
+VISIVEL_A_AREA = "area = %s AND original IS NOT NULL AND status <> 'aguardando_publicacao'"
 CAMPOS_RESTRITOS = ("autorizado_email", "atualizado_email", "erro_sincronizacao")
 
 
-def _para_publico(linha: dict) -> dict:
+def visiveis(u: dict) -> tuple[str, tuple]:
+    """Filtro SQL (e parâmetros) dos serviços que o usuário pode ver e editar."""
+    return ("ativo", ()) if u["admin"] else (f"ativo AND {VISIVEL_A_AREA}", (u["area"],))
+
+
+def _para_area(linha: dict) -> dict:
     for campo in CAMPOS_RESTRITOS:
         linha.pop(campo, None)
     return linha
 
 
 @app.get("/api/servicos")
-async def listar(request: Request):
-    admin = auth.eh_admin(request)
-    filtro = "ativo" if admin else f"ativo AND {VISIVEL_AO_PUBLICO}"
+async def listar(u: dict = Depends(auth.exigir_login)):
+    filtro, params = visiveis(u)
     async with db.conexao() as con:
-        cur = await con.execute(f"SELECT {CAMPOS_LISTA} FROM servicos WHERE {filtro} ORDER BY nome NULLS LAST, id_servico")
+        cur = await con.execute(
+            f"SELECT {CAMPOS_LISTA} FROM servicos WHERE {filtro} ORDER BY nome NULLS LAST, id_servico", params
+        )
         linhas = await cur.fetchall()
-    return linhas if admin else [_para_publico(x) for x in linhas]
+    return linhas if u["admin"] else [_para_area(x) for x in linhas]
 
 
-async def _carregar(con, id_servico: int, admin: bool = True) -> dict:
-    filtro = "" if admin else f"AND {VISIVEL_AO_PUBLICO}"
+ADMIN = {"admin": True, "area": None}
+
+
+async def _carregar(con, id_servico: int, u: dict = ADMIN) -> dict:
+    filtro, params = visiveis(u)
     cur = await con.execute(
-        f"SELECT {CAMPOS_LISTA}, original, editado FROM servicos WHERE id_servico = %s AND ativo {filtro}",
-        (id_servico,),
+        f"SELECT {CAMPOS_LISTA}, original, editado FROM servicos WHERE id_servico = %s AND {filtro}",
+        (id_servico, *params),
     )
     s = await cur.fetchone()
     if not s:
         raise HTTPException(
-            404, "Serviço indisponível: não existe, ainda não foi sincronizado ou já foi enviado para publicação."
+            404, "Serviço indisponível: não existe, não pertence à sua área, ainda não foi sincronizado "
+            "ou já foi enviado para publicação."
         )
-    return s if admin else _para_publico(s)
+    return s if u["admin"] else _para_area(s)
 
 
 @app.get("/api/servicos/{id_servico}")
-async def obter(id_servico: int, request: Request):
+async def obter(id_servico: int, u: dict = Depends(auth.exigir_login)):
     async with db.conexao() as con:
-        return await _carregar(con, id_servico, auth.eh_admin(request))
+        return await _carregar(con, id_servico, u)
 
 
 class Edicao(BaseModel):
     editado: dict
     autorizado: bool = False
-    identificacao: Identificacao | None = None  # dispensada quando o administrador está logado
+    identificacao: Identificacao | None = None  # dispensada para o administrador
     observacoes: str | None = Field(default=None, max_length=5000)
     versao: int
 
 
 @app.put("/api/servicos/{id_servico}")
-async def salvar(id_servico: int, dados: Edicao, request: Request):
+async def salvar(id_servico: int, dados: Edicao, u: dict = Depends(auth.exigir_login)):
     ed = dados.editado
     if not isinstance(ed.get("unidades"), list) or not isinstance(ed.get("etapas"), list) or "servico" not in ed:
         raise HTTPException(400, "Estrutura de dados inválida.")
-    admin = auth.eh_admin(request)
-    quem = auth.identidade_admin() if admin else await validar_identificacao(dados.identificacao)
+    admin = u["admin"]
+    quem = auth.identidade_admin() if admin else await validar_identificacao(dados.identificacao, u["area"])
+    filtro, params = visiveis(u)
     async with db.conexao() as con:
-        atual = await _carregar(con, id_servico, admin)
+        atual = await _carregar(con, id_servico, u)
         if atual["original"] is None:
             raise HTTPException(409, "Serviço ainda não sincronizado com o Portal MG.")
         alterado = ed != atual["original"]
@@ -272,17 +310,18 @@ async def salvar(id_servico: int, dados: Edicao, request: Request):
         else:
             status = "sincronizado"
         aut = dados.autorizado
+        # O filtro de visibilidade se repete aqui: a gravação só vale se o serviço continua sendo da área.
         cur = await con.execute(
-            """UPDATE servicos SET editado = %s, tem_alteracoes = %s, status = %s, autorizado = %s,
+            f"""UPDATE servicos SET editado = %s, tem_alteracoes = %s, status = %s, autorizado = %s,
                    autorizado_por = %s, autorizado_unidade = %s, autorizado_email = %s,
                    autorizado_em = CASE WHEN %s THEN now() END, observacoes = %s, versao = versao + 1,
                    atualizado_por = %s, atualizado_unidade = %s, atualizado_email = %s, atualizado_em = now()
-               WHERE id_servico = %s AND versao = %s RETURNING id_servico""",
+               WHERE id_servico = %s AND versao = %s AND {filtro} RETURNING id_servico""",
             (
                 Json(ed), alterado, status, aut,
                 quem["nome"] if aut else None, quem["unidade"] if aut else None, quem["email"] if aut else None,
                 aut, (dados.observacoes or "").strip() or None,
-                quem["nome"], quem["unidade"], quem["email"], id_servico, dados.versao,
+                quem["nome"], quem["unidade"], quem["email"], id_servico, dados.versao, *params,
             ),
         )
         if not await cur.fetchone():
@@ -297,7 +336,7 @@ async def salvar(id_servico: int, dados: Edicao, request: Request):
         if aut and not admin:
             # Enviado para a área central: a partir daqui só o administrador vê o serviço.
             return {"enviado": True, "id_servico": id_servico}
-        return await _carregar(con, id_servico, admin)
+        return await _carregar(con, id_servico, u)
 
 
 @app.post("/api/servicos/{id_servico}/publicado")
@@ -324,7 +363,9 @@ async def devolver(id_servico: int, dados: Devolucao, quem: dict = Depends(auth.
     """Administrador devolve o serviço à área demandante (retira a autorização) com uma orientação."""
     motivo = dados.motivo.strip()
     async with db.conexao() as con:
-        await _carregar(con, id_servico)
+        s = await _carregar(con, id_servico)
+        if s["status"] not in ("aguardando_publicacao", "em_edicao"):
+            raise HTTPException(409, "Só é possível devolver um serviço em edição ou aguardando publicação.")
         await con.execute(
             """UPDATE servicos SET status = 'em_edicao', autorizado = FALSE, autorizado_em = NULL,
                    observacoes = %s, versao = versao + 1, atualizado_por = %s, atualizado_unidade = %s,
@@ -355,10 +396,10 @@ async def descartar(id_servico: int, quem: dict = Depends(auth.exigir_admin)):
 
 
 @app.get("/api/servicos/{id_servico}/historico")
-async def historico(id_servico: int, request: Request):
-    admin = auth.eh_admin(request)
+async def historico(id_servico: int, u: dict = Depends(auth.exigir_login)):
+    admin = u["admin"]
     async with db.conexao() as con:
-        await _carregar(con, id_servico, admin)  # respeita a visibilidade pública
+        await _carregar(con, id_servico, u)  # respeita a visibilidade da área
         cur = await con.execute(
             """SELECT id, usuario_nome, acao, criado_em, detalhe->>'unidade' AS unidade, detalhe->>'email' AS email,
                       coalesce(detalhe->>'motivo', detalhe->>'observacoes', detalhe->>'erro') AS nota
@@ -373,19 +414,24 @@ async def historico(id_servico: int, request: Request):
 
 
 class NovoServico(BaseModel):
-    id_servico: int = Field(gt=0)
+    id_servico: int = Field(gt=0, lt=2**31)
+    area: str | None = None  # sigla; vazio = só o administrador vê
 
 
 @app.post("/api/servicos")
 async def adicionar(dados: NovoServico, quem: dict = Depends(auth.exigir_admin)):
+    # IDs da divisão em app/areas.py ficam sempre com a área definida lá.
+    area = AREA_DO_SERVICO.get(dados.id_servico) or dados.area or None
+    if area and area not in AREAS:
+        raise HTTPException(400, "Área inválida.")
     async with db.conexao() as con:
         await con.execute(
-            """INSERT INTO servicos (id_servico, origem) VALUES (%s, 'manual')
-               ON CONFLICT (id_servico) DO UPDATE SET ativo = TRUE,
+            """INSERT INTO servicos (id_servico, origem, area) VALUES (%s, 'manual', %s)
+               ON CONFLICT (id_servico) DO UPDATE SET ativo = TRUE, area = EXCLUDED.area,
                    origem = CASE WHEN servicos.ativo THEN servicos.origem ELSE 'manual' END""",
-            (dados.id_servico,),
+            (dados.id_servico, area),
         )
-        await registrar(con, dados.id_servico, quem, "adicionou_servico")
+        await registrar(con, dados.id_servico, quem, "adicionou_servico", {"area_servico": area})
     if portalmg.configurado():
         async with portalmg.novo_cliente() as cliente:
             await sincronizar_um(cliente, dados.id_servico, quem)
@@ -423,10 +469,11 @@ async def sincronizar_um(cliente, id_servico: int, quem: dict | None = None) -> 
             portal_alterado = portal_alterado or mudou_no_portal
         await con.execute(
             """UPDATE servicos SET original = %s, editado = %s, tem_alteracoes = %s, status = %s, portal_alterado = %s, nome = %s,
-                   sincronizado_em = now(), erro_sincronizacao = NULL, versao = versao + 1
+                   autorizado = autorizado AND %s, sincronizado_em = now(), erro_sincronizacao = NULL, versao = versao + 1
                WHERE id_servico = %s""",
             (
                 Json(dados), Json(editado), editado != dados, status, portal_alterado,
+                status in ("aguardando_publicacao", "publicado"),
                 portalmg.extrair_nome(dados["servico"]) or s["nome"], id_servico,
             ),
         )
@@ -498,9 +545,11 @@ async def sincronizar_servico(id_servico: int, quem: dict = Depends(auth.exigir_
 @app.get("/api/exportar")
 async def exportar(status: str = "aguardando_publicacao", quem: dict = Depends(auth.exigir_admin)):
     """JSON com original x editado — apoio à alimentação manual do Portal MG."""
+    if status not in ("todos", "nao_sincronizado", "sincronizado", "em_edicao", "aguardando_publicacao", "publicado"):
+        raise HTTPException(400, "Status inválido.")
     async with db.conexao() as con:
         cur = await con.execute(
-            """SELECT id_servico, nome, status, autorizado_por, autorizado_unidade, autorizado_email, autorizado_em,
+            """SELECT id_servico, nome, area, status, autorizado_por, autorizado_unidade, autorizado_email, autorizado_em,
                       observacoes, original, editado
                FROM servicos WHERE ativo AND (%s = 'todos' OR status = %s) ORDER BY nome""",
             (status, status),
